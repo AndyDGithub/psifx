@@ -1,0 +1,15 @@
+.git
+.github
+.devcontainer
+.idea
+.pytest_cache
+.venv
+__pycache__
+*.pyc
+*.egg-info
+build
+dist
+sam3_test_outputs
+.tmp
+.codex
+install.py.*

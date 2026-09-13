@@ -1,0 +1,40 @@
+{
+  "name": "psifx (Ubuntu 22.04 + CUDA 12.1)",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  // --env-file instead of containerEnv+${localEnv:...}: the latter only
+  // works if the shell that *launched* VS Code itself had the vars
+  // exported, which breaks when VS Code is started from a GUI launcher.
+  // Copy .devcontainer/.env.example to .devcontainer/.env (gitignored, see
+  // repo .gitignore's bare ".env" pattern) and fill in real values.
+  // Fixed public resolvers instead of relying on the host's resolv.conf:
+  // Docker snapshots that file at container start and never refreshes it,
+  // so a container that auto-starts early at boot (before the host's own
+  // DNS is up) or that outlives a network switch is stuck with stale/wrong
+  // nameservers ("Temporary failure in name resolution"). A bind-mount of
+  // the host file doesn't fix this either -- NetworkManager replaces
+  // resolv.conf via unlink+rename on every network change (new inode), so
+  // a bind mount taken at container creation goes stale again the next
+  // time you switch networks. Pinning known-reachable public resolvers
+  // sidesteps the whole class of problem, independent of host DNS state.
+  "runArgs": [
+    "--gpus=all",
+    "--env-file", ".devcontainer/.env",
+    "--dns=1.1.1.1",
+    "--dns=8.8.8.8"
+  ],
+  "remoteUser": "psifx",
+  "workspaceFolder": "/home/psifx/psifx",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/home/psifx/psifx,type=bind,consistency=cached",
+  "postCreateCommand": "psifx --version && which FeatureExtraction",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "ms-python.vscode-pylance"],
+      "settings": {
+        "python.defaultInterpreterPath": "/home/psifx/conda/envs/psifx-env/bin/python"
+      }
+    }
+  }
+}
