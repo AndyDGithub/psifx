@@ -38,3 +38,16 @@ To run tests for a specific module:
 ```bash
 pytest tests/integration/io/
 ```
+## Pose accuracy on COCO
+
+`tests/integration/video/test_pose_coco_accuracy.py` runs each pose tool through the real CLI on 8 COCO images
+(`tests/integration/data/CocoPose`) and checks its OKS / PCK@0.2 against a minimum score. This is the common
+yardstick for the model and optimization branches: a new tool registers its COCO-17 adapter in
+`research/benchmark/psifx_eval.py` and its minimum scores in `MIN_SCORES`.
+
+```bash
+pytest tests/integration/video/test_pose_coco_accuracy.py -s   # -s prints the measured scores
+```
+
+Tests under `tests/unit/research/` cover the benchmark metrics; `tests/conftest.py` puts `research/benchmark` on
+`sys.path` for them.

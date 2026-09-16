@@ -122,3 +122,19 @@ Sorties dans `results/` : `accuracy_summary.csv`, `video_summary.csv`, `final_ta
 - Sapiens2 et DETRPose tournent dans un sous-processus séparé (subprocess par backend, pas par image, `hasattr(backend, "predict_all")` dans `run_accuracy.py`/`run_video_benchmark.py`) : leur mesure de vitesse/latence a un profil différent de MediaPipe/RTMPose/RTMO/ViTPose (pas de partage de contexte CUDA avec le reste du benchmark, mais aussi pas d'overhead de changement de contexte inter-framework dans le même process comme pour les quatre autres).
 - DETRPose testé en taille M uniquement, en PyTorch eager (pas de fp16/TensorRT) — les chiffres de latence publiés supposent cette optimisation, cf. `03_resultats.md` §2.2/§4.
 - Licence Sapiens2 restrictive (cf. `01_exploration_modeles.md` §4.1) — ce benchmark technique n'implique pas une recommandation d'usage en production tant que la licence n'est pas validée avec le responsable. RTMO et DETRPose sont Apache 2.0, aucune validation requise sur ce point.
+
+## Comparer les branches via la CLI psifx (`run_psifx_cli_benchmark.py`)
+
+`run_accuracy.py` appelle chaque backend directement sur les images. `run_psifx_cli_benchmark.py` passe au contraire par
+la vraie commande `psifx video pose <tool> single-inference` : les images COCO sont mises au format 640×640 (letterbox)
+dans une vidéo, l'archive `.tar.gz` produite est notée en OKS/PCK (`psifx_eval.py`). Chaque exécution ajoute une ligne
+à `results/psifx_cli_results.csv` avec la branche et le commit courants, ce qui permet de comparer les branches
+modèle/optimisation entre elles sur exactement la même entrée et le même format de sortie.
+
+```bash
+python run_psifx_cli_benchmark.py --tool mediapipe               # 50 images (data/coco_subset)
+python run_psifx_cli_benchmark.py --tool mediapipe --coco tests  # 8 images commitées dans tests/
+```
+
+`wall_seconds` inclut le chargement du modèle (ce que paie un utilisateur de psifx par vidéo), il n'est donc pas
+comparable aux FPS de `run_video_benchmark.py`.
