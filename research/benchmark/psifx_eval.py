@@ -130,8 +130,17 @@ def _mediapipe_to_coco17(frame: dict) -> np.ndarray:
     return out
 
 
+def _coco17(frame: dict) -> np.ndarray:
+    """Tools built on psifx.video.pose.coco17 already write COCO-17 order."""
+    points = np.asarray(frame["pose_keypoints_2d"], dtype=np.float64).reshape(NUM_COCO_KEYPOINTS, 3)
+    if not np.any(points):
+        return np.full((NUM_COCO_KEYPOINTS, 3), np.nan)
+    return points
+
+
 ADAPTERS: Dict[str, Callable[[dict], np.ndarray]] = {
     "mediapipe": _mediapipe_to_coco17,
+    "coco17": _coco17,
 }
 
 
