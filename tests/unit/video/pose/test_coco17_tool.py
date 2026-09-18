@@ -110,3 +110,11 @@ def test_collect_mask_files(tmp_path):
         collect_mask_files([masks])
     with pytest.raises(FileNotFoundError):
         collect_mask_files([tmp_path / "missing.mp4"])
+
+
+@pytest.mark.unit
+def test_bbox_from_keypoints():
+    from psifx.video.pose.coco17.tool import bbox_from_keypoints
+
+    kp = np.array([[3, 7], [1, 9], [5, 2]] + [[3, 5]] * 14, dtype=np.float32)
+    np.testing.assert_allclose(bbox_from_keypoints(kp), [1, 2, 5, 9])

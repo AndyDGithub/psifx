@@ -16,6 +16,17 @@ from psifx.io import tar, video
 Person = Tuple[np.ndarray, np.ndarray, np.ndarray]
 
 
+def bbox_from_keypoints(keypoints: np.ndarray) -> np.ndarray:
+    """
+    Bounding box ``[x1, y1, x2, y2]`` enclosing the keypoints, for models that don't output one.
+
+    :param keypoints: [17, 2] keypoints.
+    :return: The bounding box.
+    """
+    keypoints = np.asarray(keypoints, dtype=np.float32)
+    return np.concatenate([keypoints.min(axis=0), keypoints.max(axis=0)])
+
+
 class Coco17PoseEstimationTool(PoseEstimationTool):
     """
     Base class for COCO-17 pose estimation tools (RTMPose, RTMO, ViTPose, ...).
