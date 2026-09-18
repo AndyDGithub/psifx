@@ -2,8 +2,9 @@
 
 Runs ``psifx video pose <tool> single-inference`` exactly as a user would,
 so each model/optimization branch can be compared on the same input and the
-same output format. One row per run, tagged with the current git branch and
-commit, so results from several branches accumulate in the same file.
+same output format. One row per run, tagged with the current git commit, in
+``results/psifx_cli/<branch>.csv``: one file per branch, so merging branches
+never conflicts on results.
 
 Usage:
     python run_psifx_cli_benchmark.py --tool mediapipe
@@ -30,7 +31,7 @@ COCO_SOURCES = {
     "benchmark": HERE / "data" / "coco_subset",  # 50 images, see prepare_coco_subset.py
     "tests": REPO / "tests" / "integration" / "data" / "CocoPose",  # 8 images, committed
 }
-RESULTS_CSV = HERE / "results" / "psifx_cli_results.csv"
+RESULTS_DIR = HERE / "results" / "psifx_cli"
 
 
 def git(*args: str) -> str:
@@ -77,9 +78,10 @@ def main() -> None:
         **{k: round(v, 4) if isinstance(v, float) else v for k, v in scores.items()},
         "wall_seconds": round(wall_seconds, 2),
     }
-    RESULTS_CSV.parent.mkdir(parents=True, exist_ok=True)
-    new_file = not RESULTS_CSV.exists()
-    with RESULTS_CSV.open("a", newline="") as f:
+    results_csv = RESULTS_DIR / f"{row['branch'].replace('/', '-')}.csv"
+    results_csv.parent.mkdir(parents=True, exist_ok=True)
+    new_file = not results_csv.exists()
+    with results_csv.open("a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=list(row))
         if new_file:
             writer.writeheader()

@@ -128,12 +128,19 @@ Sorties dans `results/` : `accuracy_summary.csv`, `video_summary.csv`, `final_ta
 `run_accuracy.py` appelle chaque backend directement sur les images. `run_psifx_cli_benchmark.py` passe au contraire par
 la vraie commande `psifx video pose <tool> single-inference` : les images COCO sont mises au format 640×640 (letterbox)
 dans une vidéo, l'archive `.tar.gz` produite est notée en OKS/PCK (`psifx_eval.py`). Chaque exécution ajoute une ligne
-à `results/psifx_cli_results.csv` avec la branche et le commit courants, ce qui permet de comparer les branches
+à `results/psifx_cli/<branche>.csv` (un fichier par branche, donc pas de conflit au merge) avec le commit courant, ce qui permet de comparer les branches
 modèle/optimisation entre elles sur exactement la même entrée et le même format de sortie.
 
 ```bash
 python run_psifx_cli_benchmark.py --tool mediapipe               # 50 images (data/coco_subset)
 python run_psifx_cli_benchmark.py --tool mediapipe --coco tests  # 8 images commitées dans tests/
+```
+
+Comparer la dernière mesure de chaque branche (lue directement dans les branches via `git show`, sans checkout ni merge) :
+
+```bash
+python compare_psifx_cli.py            # 50 images
+python compare_psifx_cli.py --coco tests
 ```
 
 `wall_seconds` inclut le chargement du modèle (ce que paie un utilisateur de psifx par vidéo), il n'est donc pas
