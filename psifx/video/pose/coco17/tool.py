@@ -1,6 +1,6 @@
 """Base tool for pose models that output COCO-17 body keypoints."""
 
-from typing import List, Tuple, Union
+from typing import Iterable, Iterator, List, Tuple, Union
 
 import json
 from pathlib import Path
@@ -54,6 +54,17 @@ class Coco17PoseEstimationTool(PoseEstimationTool):
         """
         raise NotImplementedError
 
+    def predict_video(self, frames: Iterable[np.ndarray]) -> Iterator[List[Person]]:
+        """
+        Estimates the poses on every frame, in order. Calls ``predict()`` frame by frame by default;
+        tools whose model runs out of process override it to process the whole video in one call.
+
+        :param frames: [H, W, 3] RGB uint8 frames.
+        :return: ``predict()``'s output for each frame.
+        """
+        for image in frames:
+            yield self.predict(image)
+
     @staticmethod
     def select_person(people: List[Person]) -> List[float]:
         """
@@ -100,14 +111,9 @@ class Coco17PoseEstimationTool(PoseEstimationTool):
 
         poses = {"edges": {"pose_keypoints_2d": skeleton.POSE_EDGES}}
         with video.VideoReader(path=video_path) as video_reader:
-            for i, image in enumerate(
-                tqdm(
-                    video_reader,
-                    desc="Processing",
-                    disable=not self.verbose,
-                )
-            ):
-                poses[f"{i: 015d}"] = {"pose_keypoints_2d": self.select_person(self.predict(image))}
+            frames = tqdm(video_reader, desc="Processing", disable=not self.verbose)
+            for i, people in enumerate(self.predict_video(frames)):
+                poses[f"{i: 015d}"] = {"pose_keypoints_2d": self.select_person(people)}
 
         poses = {
             f"{k}.json": json.dumps(v)
