@@ -80,6 +80,35 @@ def test_int8_upgrades_old_opset(tmp_path):
 
 
 @pytest.mark.unit
+def test_int8_keeps_mixed_range_outputs(tmp_path):
+    """Like YOLOX's dets output: coordinates (~600) concatenated with scores (0-1) must keep usable scores."""
+    rng = np.random.default_rng(0)
+    weight = numpy_helper.from_array(rng.normal(size=(4, 3, 3, 3)).astype(np.float32), "w")
+    big = numpy_helper.from_array(np.array(600.0, dtype=np.float32), "big")
+    graph = helper.make_graph(
+        [
+            helper.make_node("Conv", ["x", "w"], ["c"], pads=[1, 1, 1, 1]),
+            helper.make_node("Sigmoid", ["c"], ["score"]),
+            helper.make_node("Mul", ["score", "big"], ["coords"]),
+            helper.make_node("Concat", ["coords", "score"], ["y"], axis=1),
+        ],
+        "mixed",
+        [helper.make_tensor_value_info("x", TensorProto.FLOAT, SHAPE)],
+        [helper.make_tensor_value_info("y", TensorProto.FLOAT, (1, 8, 8, 8))],
+        initializer=[weight, big],
+    )
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+    model.ir_version = 8
+    path = tmp_path / "mixed.onnx"
+    onnx.save(model, str(path))
+
+    calibration = [rng.uniform(0, 1, SHAPE).astype(np.float32) for _ in range(8)]
+    out = quantize_int8(path, tmp_path / "mixed.int8.onnx", calibration)
+    scores_ref, scores_int8 = run(path, calibration[0])[:, 4:], run(out, calibration[0])[:, 4:]
+    assert np.abs(scores_int8 - scores_ref).max() < 0.05
+
+
+@pytest.mark.unit
 def test_int8_needs_calibration(conv_model, tmp_path):
     with pytest.raises(ValueError, match="calibration"):
         quantize_int8(conv_model, tmp_path / "x.onnx", [])

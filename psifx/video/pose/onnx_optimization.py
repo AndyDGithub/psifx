@@ -6,7 +6,7 @@ CNNs, and float16 conversion keeps float32 inputs/outputs so the callers'
 pre/post-processing is unchanged.
 """
 
-from typing import Callable, Dict, List, Sequence, Union
+from typing import Callable, Dict, List, Sequence, Tuple, Union
 
 import contextlib
 import tempfile
@@ -17,6 +17,11 @@ import numpy as np
 from psifx.io import video
 
 PRECISIONS = ("fp32", "fp16", "int8")
+
+# Only the compute-heavy ops are quantized. Post-processing stays in float32: rtmlib's
+# YOLOX concatenates box coordinates (0-640) and scores (0-1) in one output tensor, and a
+# single INT8 scale for both rounds every score to 0 (no detection at all).
+QUANTIZED_OPS = ("Conv", "MatMul")
 
 
 def convert_fp16(model_path: Union[str, Path], output_path: Union[str, Path]) -> Path:
@@ -39,6 +44,7 @@ def quantize_int8(
     model_path: Union[str, Path],
     output_path: Union[str, Path],
     calibration_inputs: Sequence[np.ndarray],
+    op_types: Tuple[str, ...] = QUANTIZED_OPS,
 ) -> Path:
     """
     Quantizes an ONNX model to INT8 (static, QDQ, signed weights and activations, per-channel weights).
@@ -46,6 +52,7 @@ def quantize_int8(
     :param model_path: Path to the float32 ONNX model.
     :param output_path: Path to the INT8 ONNX model.
     :param calibration_inputs: Representative model inputs, each with the model's input shape.
+    :param op_types: Operator types to quantize, the others stay in float32.
     :return: The output path.
     """
     import onnx
@@ -89,6 +96,7 @@ def quantize_int8(
             activation_type=QuantType.QInt8,
             weight_type=QuantType.QInt8,
             per_channel=per_channel,
+            op_types_to_quantize=list(op_types),
         )
     return Path(output_path)
 
