@@ -22,8 +22,7 @@ from psifx.video.pose.onnx_optimization import (  # noqa: E402
 SHAPE = (1, 3, 8, 8)
 
 
-@pytest.fixture
-def conv_model(tmp_path):
+def build_conv_model(tmp_path, opset):
     rng = np.random.default_rng(0)
     weight = numpy_helper.from_array(rng.normal(size=(4, 3, 3, 3)).astype(np.float32), "w")
     graph = helper.make_graph(
@@ -33,11 +32,16 @@ def conv_model(tmp_path):
         [helper.make_tensor_value_info("y", TensorProto.FLOAT, (1, 4, 8, 8))],
         initializer=[weight],
     )
-    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", opset)])
     model.ir_version = 8
-    path = tmp_path / "tiny.onnx"
+    path = tmp_path / f"tiny_opset{opset}.onnx"
     onnx.save(model, str(path))
     return path
+
+
+@pytest.fixture
+def conv_model(tmp_path):
+    return build_conv_model(tmp_path, 17)
 
 
 def run(path, x):
@@ -64,6 +68,15 @@ def test_int8_stays_close_to_fp32(conv_model, tmp_path):
     reference, quantized = run(conv_model, x), run(out, x)
     # INT8 error should be a small fraction of the output range.
     assert np.abs(quantized - reference).max() < 0.05 * np.abs(reference).max()
+
+
+@pytest.mark.unit
+def test_int8_upgrades_old_opset(tmp_path):
+    """rtmlib's YOLOX is opset 11: per-channel QDQ must still produce a loadable model."""
+    old = build_conv_model(tmp_path, 11)
+    calibration = [np.random.default_rng(i).uniform(0, 1, SHAPE).astype(np.float32) for i in range(4)]
+    out = quantize_int8(old, tmp_path / "old.int8.onnx", calibration)
+    assert run(out, calibration[0]).shape == (1, 4, 8, 8)
 
 
 @pytest.mark.unit

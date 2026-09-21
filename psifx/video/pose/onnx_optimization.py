@@ -54,7 +54,20 @@ def quantize_int8(
 
     if len(calibration_inputs) == 0:
         raise ValueError("INT8 quantization needs at least one calibration input")
-    input_name = onnx.load(str(model_path)).graph.input[0].name
+    model = onnx.load(str(model_path))
+    input_name = model.graph.input[0].name
+
+    # Per-channel QDQ needs the ``axis`` attribute of (De)QuantizeLinear, added in opset 13.
+    opset = next(o.version for o in model.opset_import if o.domain in ("", "ai.onnx"))
+    per_channel = True
+    if opset < 13:
+        try:
+            from onnx import version_converter
+
+            model = version_converter.convert_version(model, 13)
+        except Exception as error:  # the converter does not support every op/opset pair
+            print(f"Could not upgrade {model_path} from opset {opset} to 13 ({error}): per-tensor INT8 instead.")
+            per_channel = False
 
     class Reader(CalibrationDataReader):
         def __init__(self):
@@ -67,7 +80,7 @@ def quantize_int8(
     with tempfile.TemporaryDirectory() as tmp_dir:
         # Shape inference + graph cleanup first, as recommended before quantize_static.
         preprocessed = Path(tmp_dir) / "preprocessed.onnx"
-        quant_pre_process(str(model_path), str(preprocessed))
+        quant_pre_process(model, str(preprocessed))
         quantize_static(
             str(preprocessed),
             str(output_path),
@@ -75,7 +88,7 @@ def quantize_int8(
             quant_format=QuantFormat.QDQ,
             activation_type=QuantType.QInt8,
             weight_type=QuantType.QInt8,
-            per_channel=True,
+            per_channel=per_channel,
         )
     return Path(output_path)
 
