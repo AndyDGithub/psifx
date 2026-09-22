@@ -87,7 +87,9 @@ def quantize_int8(
     with tempfile.TemporaryDirectory() as tmp_dir:
         # Shape inference + graph cleanup first, as recommended before quantize_static.
         preprocessed = Path(tmp_dir) / "preprocessed.onnx"
-        quant_pre_process(model, str(preprocessed))
+        # Symbolic shape inference targets transformers and fails on RTMO's dynamic
+        # post-processing; plain ONNX shape inference is the documented choice for other models.
+        quant_pre_process(model, str(preprocessed), skip_symbolic_shape=True)
         quantize_static(
             str(preprocessed),
             str(output_path),
