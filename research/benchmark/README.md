@@ -145,3 +145,17 @@ python compare_psifx_cli.py --coco tests
 
 `wall_seconds` inclut le chargement du modèle (ce que paie un utilisateur de psifx par vidéo), il n'est donc pas
 comparable aux FPS de `run_video_benchmark.py`.
+
+## Vitesse en régime établi (`time_psifx_pose.py`) — pour les branches d'optimisation
+
+`wall_seconds` mélange chargement, compilation et inférence. `time_psifx_pose.py` charge l'outil psifx une fois, fait
+2 passes d'échauffement sur les images COCO puis en chronomètre 3 (avec `torch.cuda.synchronize()`), et donne ms/image
+et FPS. Les options d'optimisation passent par `--kwargs` (JSON, arguments du constructeur de l'outil) :
+
+```bash
+python time_psifx_pose.py --tool vitpose --device cuda --kwargs '{"fp16": true, "compile": true}'
+python time_psifx_pose.py --tool rtmpose --device cpu --kwargs '{"precision": "int8", "calibration_video": "../../tests/integration/data/Multi.mp4"}'
+```
+
+RTMPose/RTMO sur GPU demandent `onnxruntime-gpu==1.20.2` et le `LD_LIBRARY_PATH` décrit en haut de ce fichier ; sans
+lui, les outils psifx s'arrêtent avec une erreur explicite au lieu de retomber silencieusement sur CPU.
