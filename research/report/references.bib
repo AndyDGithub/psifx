@@ -1,0 +1,545 @@
+% Bibliographie du rapport de TM (v1).
+% Sources reprises des notes research/01_* a 05_*. Accents en echappements LaTeX
+% (backend bibtex). Les entrees marquees "TODO" ont des metadonnees a completer
+% (auteurs non releves dans les notes) : ne rien inventer, verifier a la source.
+
+% ---------------------------------------------------------------------------
+% psifx
+% ---------------------------------------------------------------------------
+
+@misc{psifx2024,
+  author       = {Rochette, Guillaume and Vowels, Matthew and Rochat, Mathieu},
+  title        = {psifx -- Psychological and Social Interactions Feature Extraction Package},
+  year         = {2024},
+  eprint       = {2407.10266},
+  archiveprefix = {arXiv},
+  url          = {https://www.arxiv.org/abs/2407.10266},
+}
+
+% ---------------------------------------------------------------------------
+% Donnees et metriques
+% ---------------------------------------------------------------------------
+
+@inproceedings{lin2014coco,
+  author    = {Lin, Tsung-Yi and Maire, Michael and Belongie, Serge and Hays, James and Perona, Pietro and Ramanan, Deva and Doll{\'a}r, Piotr and Zitnick, C. Lawrence},
+  title     = {Microsoft {COCO}: Common Objects in Context},
+  booktitle = {European Conference on Computer Vision (ECCV)},
+  year      = {2014},
+  url       = {https://cocodataset.org},
+}
+
+@article{neumann1998ssm,
+  author  = {Neumann, A. and Lorenz, C.},
+  title   = {Statistical shape model based segmentation of medical images},
+  journal = {Computerized Medical Imaging and Graphics},
+  year    = {1998},
+  doi     = {10.1016/S0895-6111(98)00015-9},
+}
+
+@article{kelemen1999elastic,
+  author  = {Kelemen, Andr{\'a}s and Sz{\'e}kely, G{\'a}bor and Gerig, Guido},
+  title   = {Elastic model-based segmentation of {3-D} neuroradiological data sets},
+  journal = {IEEE Transactions on Medical Imaging},
+  year    = {1999},
+  url     = {https://pubmed.ncbi.nlm.nih.gov/10628943/},
+}
+
+@article{vacchetti2004stable,
+  author  = {Vacchetti, Luca and Lepetit, Vincent and Fua, Pascal},
+  title   = {Stable Real-Time {3D} Tracking using Online and Offline Information},
+  journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence},
+  year    = {2004},
+  url     = {https://vincentlepetit.github.io/files/papers/comp_vacchetti_pami04.pdf},
+}
+
+@inproceedings{hinterstoisser2012linemod,
+  author    = {Hinterstoisser, Stefan and Lepetit, Vincent and Ilic, Slobodan and Holzer, Stefan and Bradski, Gary and Konolige, Kurt and Navab, Nassir},
+  title     = {Model Based Training, Detection and Pose Estimation of Texture-Less {3D} Objects in Heavily Cluttered Scenes},
+  booktitle = {Asian Conference on Computer Vision (ACCV)},
+  year      = {2012},
+  url       = {https://vincentlepetit.github.io/files/papers/comp_hinterstoisser_accv12.pdf},
+}
+
+@inproceedings{chen2014articulated,
+  author    = {Chen, Xianjie and Yuille, Alan},
+  title     = {Articulated Pose Estimation by a Graphical Model with Image Dependent Pairwise Relations},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2014},
+  url       = {https://proceedings.neurips.cc/paper_files/paper/2014/file/6ac19afba0591c506d495d9d6bed5802-Paper.pdf},
+}
+
+@misc{ornek2023foundpose,
+  author        = {{\"O}rnek, Evin P{\i}nar and Labb{\'e}, Yann and Tekin, Bugra and Ma, Lingni and Keskin, Cem and Forster, Christian and Hodan, Tom{\'a}{\v{s}}},
+  title         = {{FoundPose}: Unseen Object Pose Estimation with Foundation Features},
+  year          = {2023},
+  eprint        = {2311.18809},
+  archiveprefix = {arXiv},
+  url           = {https://arxiv.org/pdf/2311.18809},
+}
+
+@inproceedings{wen2024foundationpose,
+  author    = {Wen, Bowen and Yang, Wei and Kautz, Jan and Birchfield, Stan},
+  title     = {{FoundationPose}: Unified {6D} Pose Estimation and Tracking of Novel Objects},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2024},
+  url       = {https://arxiv.org/html/2312.08344v2},
+}
+
+@inproceedings{li2025gcepose,
+  author    = {Li and Xu and Huang and Jung and Yu and Navab, Nassir and Busam, Benjamin},
+  title     = {{GCE-Pose}: Global Context Enhancement for Category-level Object Pose Estimation},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2025},
+  url       = {https://arxiv.org/pdf/2502.04293},
+  note      = {TODO : completer les prenoms des auteurs},
+}
+
+@article{shrestha2026survey,
+  author  = {Shrestha and Thakur and Wang},
+  title   = {Human Pose Estimation in {2D} and {3D}: A Survey of Analytical Methods, Benchmarking Frameworks, and Engineering Applications},
+  journal = {Journal of Experimental and Theoretical Analyses (JETA)},
+  year    = {2026},
+  doi     = {10.3390/jeta4030028},
+  note    = {TODO : completer les prenoms des auteurs et verifier le nom de la revue},
+}
+
+@article{fernandez2026mbrcs,
+  author  = {Fernandez and Bonnin and Fernandez-Maloigne, Christine},
+  title   = {From Pose Estimation Accuracy to Motor Biomarker Reliability: A Reliability-Centred Evaluation Framework for Markerless Movement Analysis},
+  journal = {Frontiers in Neuroinformatics},
+  year    = {2026},
+  doi     = {10.3389/fninf.2026.1790241},
+  note    = {TODO : completer les prenoms des auteurs},
+}
+
+% ---------------------------------------------------------------------------
+% Pose estimation humaine 2D
+% ---------------------------------------------------------------------------
+
+@misc{lugaresi2019mediapipe,
+  author        = {Lugaresi, Camillo and Tang, Jiuqiang and Nash, Hadon and McClanahan, Chris and Uboweja, Esha and Hays, Michael and Zhang, Fan and Chang, Chuo-Ling and Yong, Ming Guang and Lee, Juhyun and Chang, Wan-Teh and Hua, Wei and Georg, Manfred and Grundmann, Matthias},
+  title         = {{MediaPipe}: A Framework for Building Perception Pipelines},
+  year          = {2019},
+  eprint        = {1906.08172},
+  archiveprefix = {arXiv},
+}
+
+@misc{jiang2023rtmpose,
+  author        = {Jiang, Tao and Lu, Peng and Zhang, Li and Ma, Ningsheng and Han, Rui and Lyu, Chengqi and Li, Yining and Chen, Kai},
+  title         = {{RTMPose}: Real-Time Multi-Person Pose Estimation based on {MMPose}},
+  year          = {2023},
+  eprint        = {2303.07399},
+  archiveprefix = {arXiv},
+  url           = {https://arxiv.org/html/2303.07399v2},
+}
+
+@misc{jiang2024rtmw,
+  author        = {Jiang, Tao and Xie, Xinchen and Li, Yining},
+  title         = {{RTMW}: Real-Time Multi-Person {2D} and {3D} Whole-body Pose Estimation},
+  year          = {2024},
+  eprint        = {2407.08634},
+  archiveprefix = {arXiv},
+  url           = {https://arxiv.org/html/2407.08634v1},
+}
+
+@inproceedings{lu2024rtmo,
+  author    = {Lu, Peng and Jiang, Tao and Li, Yining and Li, Xiangtai and Chen, Kai and Yang, Wenming},
+  title     = {{RTMO}: Towards High-Performance One-Stage Real-Time Multi-Person Pose Estimation},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2024},
+  url       = {https://arxiv.org/html/2312.07526v1},
+}
+
+@inproceedings{xu2022vitpose,
+  author    = {Xu, Yufei and Zhang, Jing and Zhang, Qiming and Tao, Dacheng},
+  title     = {{ViTPose}: Simple Vision Transformer Baselines for Human Pose Estimation},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2022},
+  url       = {https://github.com/ViTAE-Transformer/ViTPose},
+}
+
+@misc{janampa2025detrpose,
+  author        = {Janampa, Sebastian and Pattichis, Marios},
+  title         = {{DETRPose}: Real-Time End-to-End Multi-Person Pose Estimation via Modified Transformer Decoder and Novel Denoising Keypoints},
+  year          = {2025},
+  eprint        = {2506.13027},
+  archiveprefix = {arXiv},
+  url           = {https://arxiv.org/pdf/2506.13027},
+}
+
+@online{detrpose_repo,
+  author  = {Janampa, Sebastian},
+  title   = {{DETRPose} -- d{\'e}p{\^o}t officiel (licence Apache 2.0)},
+  year    = {2025},
+  url     = {https://github.com/SebastianJanampa/DETRPose},
+  urldate = {2026-10-07},
+}
+
+@inproceedings{khirodkar2024sapiens,
+  author    = {Khirodkar, Rawal and Bagautdinov, Timur and Martinez, Julieta and Su, Zhaoen and James, Austin and Selednik, Peter and Anderson, Stuart and Saito, Shunsuke},
+  title     = {Sapiens: Foundation for Human Vision Models},
+  booktitle = {European Conference on Computer Vision (ECCV)},
+  year      = {2024},
+  url       = {https://arxiv.org/abs/2408.12569},
+}
+
+@online{sapiens2_hf,
+  author  = {{Meta AI}},
+  title   = {{Sapiens2} -- poids et carte du mod{\`e}le},
+  year    = {2026},
+  url     = {https://huggingface.co/facebook/sapiens2},
+  urldate = {2026-09-17},
+}
+
+@online{sapiens2_license,
+  author  = {{Meta AI}},
+  title   = {{Sapiens2 License}},
+  year    = {2026},
+  url     = {https://github.com/facebookresearch/sapiens2/blob/main/LICENSE.md},
+  urldate = {2026-09-17},
+}
+
+@online{sapiens2_marktechpost,
+  title   = {Meta {AI} Releases {Sapiens2}: A High-Resolution Human-Centric Vision Model},
+  organization = {MarkTechPost},
+  year    = {2026},
+  url     = {https://www.marktechpost.com/2026/04/27/meta-ai-releases-sapiens2-a-high-resolution-human-centric-vision-model-for-pose-segmentation-normals-pointmap-and-albedo/},
+  urldate = {2026-09-17},
+}
+
+@misc{ultralytics2026yolo26,
+  title         = {Ultralytics {YOLO26}: Unified Real-Time End-to-End Vision Models},
+  year          = {2026},
+  eprint        = {2606.03748},
+  archiveprefix = {arXiv},
+  url           = {https://arxiv.org/abs/2606.03748},
+  note          = {TODO : completer les auteurs},
+}
+
+@online{ultralytics_license,
+  author  = {{Ultralytics}},
+  title   = {Ultralytics License ({AGPL-3.0} / Enterprise)},
+  url     = {https://www.ultralytics.com/license},
+  urldate = {2026-09-28},
+}
+
+@inproceedings{geng2021dekr,
+  author    = {Geng, Zigang and Sun, Ke and Xiao, Bin and Zhang, Zhaoxiang and Wang, Jingdong},
+  title     = {Bottom-Up Human Pose Estimation via Disentangled Keypoint Regression},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2021},
+  url       = {https://arxiv.org/pdf/2104.02300},
+}
+
+@article{featureselection2026realtime,
+  title   = {Towards Real-Time Multi-Person Pose Estimation via Feature Selection and Sharpening Mechanisms},
+  year    = {2026},
+  url     = {https://www.sciencedirect.com/org/science/article/pii/S1526149226001062},
+  note    = {TODO : completer auteurs et revue},
+}
+
+@online{forasoft2026posestack,
+  title        = {{OpenPose}, {MediaPipe Pose}, {RTMPose}, {ViTPose} -- The Pose-Tracking Stack For Video In 2026},
+  organization = {Fora Soft},
+  year         = {2026},
+  url          = {https://www.forasoft.com/learn/ai-for-video-engineering/articles-ai/openpose-mediapipe-rtmpose-pose-tracking},
+  urldate      = {2026-09-17},
+}
+
+@online{mmpose_discussion3135,
+  author  = {{OpenMMLab}},
+  title   = {{RTMPose} vs {RTMO} vs {DWPose} vs {RTMW} -- discussion mmpose \#3135},
+  url     = {https://github.com/open-mmlab/mmpose/discussions/3135},
+  urldate = {2026-09-28},
+}
+
+@online{rtmlib,
+  author  = {Jiang, Tao},
+  title   = {rtmlib: {RTMPose} series inference without mmcv/mmpose},
+  url     = {https://github.com/Tau-J/rtmlib},
+  note    = {version 0.0.16},
+  urldate = {2026-10-07},
+}
+
+@online{hf_vitpose,
+  author  = {{Hugging Face}},
+  title   = {{ViTPose} -- documentation Transformers},
+  url     = {https://huggingface.co/docs/transformers/v5.14.0/model_doc/vitpose},
+  urldate = {2026-10-07},
+}
+
+% Comparatifs empiriques incluant MediaPipe
+@article{circus2026mediapipe,
+  title   = {Evaluating {MediaPipe}, {YOLOv8}, and {VitPose} for dynamic circus motion analysis},
+  journal = {Multimedia Tools and Applications},
+  year    = {2026},
+  url     = {https://link.springer.com/article/10.1007/s11042-026-21316-4},
+  note    = {TODO : completer les auteurs},
+}
+
+@article{gait2022comparison,
+  title   = {Comparing the accuracy of open-source pose estimation methods for measuring gait kinematics},
+  journal = {Gait \& Posture},
+  url     = {https://www.sciencedirect.com/science/article/abs/pii/S0966636222004738},
+  note    = {TODO : completer auteurs, annee et verifier la revue},
+}
+
+% ---------------------------------------------------------------------------
+% Segmentation et tracking
+% ---------------------------------------------------------------------------
+
+@online{hf_sam3,
+  author  = {{Hugging Face}},
+  title   = {{SAM3} -- documentation Transformers},
+  url     = {https://huggingface.co/docs/transformers/model_doc/sam3},
+  urldate = {2026-09-17},
+}
+
+@online{meta_sam31,
+  author  = {{Meta AI}},
+  title   = {{SAM 3.1}: Faster and More Accessible Real-Time Video Detection and Tracking},
+  year    = {2026},
+  url     = {https://ai.meta.com/blog/segment-anything-model-3/},
+  urldate = {2026-09-17},
+}
+
+@online{learnopencv_sam31,
+  organization = {LearnOpenCV},
+  title   = {{SAM 3.1}: Object Multiplex and Video Tracking},
+  year    = {2026},
+  url     = {https://learnopencv.com/sam-3-whats-new/},
+  urldate = {2026-09-17},
+}
+
+@misc{mosev2,
+  title         = {{MOSEv2}: A More Challenging Dataset for Video Object Segmentation in Complex Scenes},
+  year          = {2025},
+  url           = {https://arxiv.org/pdf/2508.05630},
+  note          = {TODO : completer les auteurs},
+}
+
+@misc{pvuw2026tracking,
+  title  = {Advancing Complex Video Object Segmentation via Tracking-Enhanced Prompt: 1st Winner, 5th {PVUW MOSE} Challenge},
+  year   = {2026},
+  url    = {https://arxiv.org/html/2604.00395v1},
+  note   = {TODO : completer les auteurs},
+}
+
+@misc{pvuw2026reprompt,
+  title  = {Re-Prompting {SAM 3} via Object Retrieval: 3rd of the 5th {PVUW MOSE} Track},
+  year   = {2026},
+  url    = {https://arxiv.org/pdf/2603.23788},
+  note   = {TODO : completer les auteurs},
+}
+
+@misc{zhang2023mobilesam,
+  author        = {Zhang, Chaoning and Han, Dongshen and Qiao, Yu and Kim, Jung Uk and Bae, Sung-Ho and Lee, Seungkyu and Hong, Choong Seon},
+  title         = {Faster Segment Anything: Towards Lightweight {SAM} for Mobile Applications},
+  year          = {2023},
+  eprint        = {2306.14289},
+  archiveprefix = {arXiv},
+  url           = {https://arxiv.org/html/2306.14289},
+}
+
+@online{efficientsam_repo,
+  title   = {{EfficientSAM} -- d{\'e}p{\^o}t officiel (licence Apache 2.0)},
+  url     = {https://github.com/yformer/EfficientSAM},
+  urldate = {2026-09-28},
+}
+
+@online{awesome_efficient_sam,
+  title   = {Awesome-Efficient-Segment-Anything -- comparatif {MobileSAM}/{FastSAM}/{EfficientSAM}},
+  url     = {https://github.com/czg1225/Awesome-Efficient-Segment-Anything},
+  urldate = {2026-09-28},
+}
+
+@misc{sampose2seg,
+  title  = {{SAM-pose2seg}: Pose-Guided Human Instance Segmentation in Crowds},
+  year   = {2026},
+  url    = {https://www.alphaxiv.org/abs/2601.08982},
+  note   = {TODO : completer les auteurs},
+}
+
+@online{bboxmaskpose_repo,
+  author  = {Purkr{\'a}bek, Miroslav},
+  title   = {{BBoxMaskPose} -- d{\'e}p{\^o}t officiel (licence GPL-3.0)},
+  url     = {https://github.com/MiraPurkrabek/BBoxMaskPose},
+  urldate = {2026-09-28},
+}
+
+@article{a2vis,
+  title   = {{A2VIS}: Amodal-Aware Approach to Video Instance Segmentation},
+  journal = {Image and Vision Computing},
+  year    = {2025},
+  url     = {https://www.sciencedirect.com/science/article/abs/pii/S0262885625001313},
+  note    = {TODO : completer les auteurs et verifier la revue},
+}
+
+@misc{diffusion_amodal,
+  title  = {Using Diffusion Priors for Video Amodal Segmentation},
+  year   = {2024},
+  url    = {https://arxiv.org/pdf/2412.04623},
+  note   = {TODO : completer les auteurs},
+}
+
+% ---------------------------------------------------------------------------
+% Sciences du comportement
+% ---------------------------------------------------------------------------
+
+@article{fbbc2025,
+  title   = {Feature-based behavior coding for efficient exploratory analysis using pose estimation},
+  journal = {Behavior Research Methods},
+  url     = {https://pmc.ncbi.nlm.nih.gov/articles/PMC12064611/},
+  note    = {TODO : completer auteurs et annee},
+}
+
+@article{markerless_review,
+  title   = {Does advancement in marker-less pose-estimation mean more quality research? A systematic review},
+  url     = {https://pmc.ncbi.nlm.nih.gov/articles/PMC12411509/},
+  note    = {TODO : completer auteurs, revue et annee},
+}
+
+@article{humanvlm,
+  title   = {{HumanVLM}: Foundation for Human-Scene Vision-Language Model},
+  journal = {Information Fusion},
+  url     = {https://www.sciencedirect.com/science/article/abs/pii/S1566253525003446},
+  note    = {TODO : completer auteurs, annee et verifier la revue},
+}
+
+@misc{llavapose,
+  title  = {{LLaVA-Pose}: Enhancing Human Pose and Action Understanding via Keypoint-Integrated Instruction Tuning},
+  year   = {2025},
+  url    = {https://arxiv.org/pdf/2506.21317},
+  note   = {TODO : completer les auteurs},
+}
+
+% ---------------------------------------------------------------------------
+% Optimisation d'inference
+% ---------------------------------------------------------------------------
+
+@online{hf_torch_compile,
+  author  = {{Hugging Face}},
+  title   = {torch.compile -- documentation Transformers v5.8},
+  url     = {https://huggingface.co/docs/transformers/v5.8.0/perf_torch_compile},
+  urldate = {2026-10-07},
+}
+
+@online{hf_diffusers_fp16,
+  author  = {{Hugging Face}},
+  title   = {Accelerate inference -- documentation Diffusers},
+  url     = {https://huggingface.co/docs/diffusers/optimization/fp16},
+  urldate = {2026-10-07},
+}
+
+@online{casson_compile_vit,
+  author  = {Casson, Adam},
+  title   = {How does torch.compile speed up a transformer?},
+  url     = {https://www.adamcasson.com/posts/torch-compile-vit},
+  urldate = {2026-09-28},
+}
+
+@online{pytorch_flexattention,
+  author  = {{PyTorch}},
+  title   = {{FlexAttention}: The Flexibility of {PyTorch} with the Performance of {FlashAttention}},
+  url     = {https://pytorch.org/blog/flexattention/},
+  urldate = {2026-09-28},
+}
+
+@online{pytorch_cuda_async,
+  author  = {{PyTorch}},
+  title   = {{CUDA} semantics -- Asynchronous execution},
+  url     = {https://docs.pytorch.org/docs/stable/notes/cuda.html#asynchronous-execution},
+  urldate = {2026-10-07},
+}
+
+@online{ort_quantization,
+  author  = {{ONNX Runtime}},
+  title   = {Quantize {ONNX} Models},
+  url     = {https://www.onnxruntime.ai/docs/performance/model-optimizations/quantization.html},
+  urldate = {2026-10-07},
+}
+
+@online{ort_float16,
+  author  = {{ONNX Runtime}},
+  title   = {Create Float16 and Mixed Precision Models},
+  url     = {https://onnxruntime.ai/docs/performance/model-optimizations/float16.html},
+  urldate = {2026-10-07},
+}
+
+@online{ort_tensorrt,
+  author  = {{ONNX Runtime}},
+  title   = {{TensorRT} Execution Provider},
+  url     = {https://onnxruntime.ai/docs/execution-providers/TensorRT-ExecutionProvider.html},
+  urldate = {2026-10-07},
+}
+
+@online{ort_cuda,
+  author  = {{ONNX Runtime}},
+  title   = {{CUDA} Execution Provider},
+  url     = {https://www.onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider},
+  urldate = {2026-10-07},
+}
+
+@online{optimum_gpu,
+  author  = {{Hugging Face}},
+  title   = {Accelerated inference on {NVIDIA} {GPUs} -- documentation Optimum},
+  url     = {https://huggingface.co/docs/optimum-onnx/onnxruntime/usage_guides/gpu},
+  urldate = {2026-10-07},
+}
+
+@online{torchao_inference,
+  author  = {{PyTorch}},
+  title   = {torchao -- Inference workflows},
+  url     = {https://docs.pytorch.org/ao/stable/workflows/inference.html},
+  urldate = {2026-10-07},
+}
+
+@online{torch_ao_migration,
+  author  = {{PyTorch}},
+  title   = {torch.ao.quantization migration plan},
+  url     = {https://dev-discuss.pytorch.org/t/torch-ao-quantization-migration-plan/2810},
+  urldate = {2026-10-07},
+}
+
+@misc{vit_quant_survey,
+  title  = {Model Quantization and Hardware Acceleration for Vision Transformers: A Comprehensive Survey},
+  year   = {2024},
+  url    = {https://arxiv.org/pdf/2405.00314},
+  note   = {TODO : completer les auteurs},
+}
+
+@misc{vit_edge_survey,
+  title  = {Vision Transformers on the Edge: A Comprehensive Survey of Model Compression and Acceleration Strategies},
+  year   = {2025},
+  url    = {https://arxiv.org/pdf/2503.02891},
+  note   = {TODO : completer les auteurs},
+}
+
+@online{nvidia_modelopt,
+  author  = {{NVIDIA}},
+  title   = {Model-Optimizer (quantization, distillation, pruning toolkit)},
+  url     = {https://github.com/NVIDIA/Model-Optimizer},
+  urldate = {2026-09-28},
+}
+
+@online{nvidia_fp8_tensorrt,
+  author  = {{NVIDIA}},
+  title   = {Model Quantization: {FP8} Checkpoints with {NVIDIA} {TensorRT}},
+  url     = {https://developer.nvidia.com/blog/model-quantization-turn-fp8-checkpoints-into-high-performance-inference-engines-with-nvidia-tensorrt/},
+  urldate = {2026-09-28},
+}
+
+@inproceedings{li2021okdhp,
+  title     = {Online Knowledge Distillation for Efficient Pose Estimation},
+  booktitle = {IEEE/CVF International Conference on Computer Vision (ICCV)},
+  year      = {2021},
+  url       = {https://arxiv.org/pdf/2108.02092},
+  note      = {TODO : completer les auteurs},
+}
+
+@misc{uncertainty_kd_6dof,
+  title  = {Uncertainty-Aware Knowledge Distillation for Compact and Efficient {6DoF} Pose Estimation},
+  year   = {2025},
+  url    = {https://arxiv.org/pdf/2503.13053},
+  note   = {TODO : completer les auteurs},
+}

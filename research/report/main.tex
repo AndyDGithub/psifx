@@ -1,0 +1,897 @@
+\documentclass[11pt,a4paper]{report}
+
+% --- Essential packages ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[french]{babel}
+\usepackage{csquotes}
+
+% --- Layout and spacing ---
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{xcolor}
+
+% --- Math and symbols ---
+\usepackage{amsmath, amssymb}
+\usepackage{textcomp}
+
+% --- Lists and tables ---
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{array}
+
+% --- Graphics and links ---
+\usepackage{graphicx}
+\usepackage{placeins}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+\setlength{\emergencystretch}{3em}
+
+% --- Bibliography ---
+% backend=bibtex : compile sans biber (localement et sur Overleaf).
+\usepackage[backend=bibtex, style=ieee]{biblatex}
+\addbibresource{references.bib}
+
+% --- Helpers ---
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\todo}[1]{\textcolor{red}{[TODO : #1]}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+% Page margins
+\geometry{left=3cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+
+% Header / Footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{MSE Travail de Master -- Estimation de pose dans psifx}
+\fancyfoot[R]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% Line spacing
+\onehalfspacing
+
+% Title formatting
+\titleformat{\chapter}[hang]{\bfseries\Huge}{\thechapter.}{2pc}{}
+\titleformat{\section}[hang]{\bfseries\Large}{\thesection}{1em}{}
+
+\begin{document}
+
+% =============================================================================
+% Page de titre
+% =============================================================================
+\begin{titlepage}
+    \centering
+
+    % Logos (optionnels : ajoutes s'ils sont presents dans images/)
+    \IfFileExists{images/mse_logo.png}{%
+    \begin{minipage}[t]{0.49\textwidth}
+        \includegraphics[height=2cm]{images/mse_logo.png}
+    \end{minipage}}{}
+    \hfill
+    \IfFileExists{images/hes_logo.png}{%
+    \begin{minipage}[t]{0.49\textwidth}
+        \raggedleft
+        \includegraphics[height=2cm]{images/hes_logo.png}
+    \end{minipage}}{}
+
+    \vspace*{2cm}
+    {\Large Master of Science HES-SO in Engineering} \\[0.2cm]
+    Av. de Provence 6 \\
+    CH-1007 Lausanne \\[2cm]
+
+    {\Large Orientation : Computer Science (CS)}\\[1.5cm]
+
+    {\Huge\bfseries Estimation de pose humaine dans psifx :\\[0.3cm]
+    choisir, intégrer et optimiser des modèles récents\\[1cm]}
+
+    {\Large Travail de Master -- Rapport, version 1}\\[2cm]
+
+    {\large Andy Montaru}\\[1cm]
+
+    \begin{tabular}{rl}
+        Professeur responsable : & \todo{nom du responsable} \\
+        Expert externe / contact psifx : & Matthew Vowels (UNIL) \\
+    \end{tabular}
+
+    \vfill
+    {\large Lausanne, \today}
+\end{titlepage}
+
+% =============================================================================
+% Résumé
+% =============================================================================
+\chapter*{Résumé}
+\addcontentsline{toc}{chapter}{Résumé}
+
+psifx \cite{psifx2024} est une bibliothèque Python d'extraction de caractéristiques destinée à la recherche en
+sciences humaines (interactions sociales filmées). Son unique backend d'estimation de pose humaine, MediaPipe, est
+léger mais nettement moins précis que les modèles récents. Ce travail cherche à choisir de manière objective et
+reproductible quel(s) modèle(s) intégrer à psifx, en tenant compte non seulement de la précision, mais aussi de la
+stabilité temporelle, du coût de calcul, de la licence et de la cohérence avec l'architecture existante.
+
+Après une revue de l'état de l'art (modèles de pose 2D, segmentation et suivi vidéo, méthodologies de mesure de
+précision, littérature en sciences du comportement), un banc de mesure reproductible a été construit sur un
+sous-ensemble de COCO \cite{lin2014coco} et une vidéo d'interaction. Huit configurations ont été comparées :
+MediaPipe, RTMPose, RTMO, DETRPose, ViTPose et trois tailles de Sapiens2. MediaPipe obtient un OKS moyen de 0,235,
+contre 0,830 à 0,890 pour les meilleurs candidats ; Sapiens2 reste impraticable en vidéo (0,9 à 1,3 image/s).
+
+Quatre modèles (RTMPose, RTMO, ViTPose, DETRPose) ont ensuite été intégrés à psifx comme remplaçants directs de
+MediaPipe, chacun dans sa propre branche, avec des tests unitaires et un test de non-régression de précision sur
+COCO. Des optimisations d'inférence (fp16, \code{torch.compile}, quantification INT8) ont été mesurées sur chacun.
+Le meilleur gain est obtenu par RTMO en fp16 (+43\,\%, 110 images/s, précision inchangée) ; l'INT8 statique s'est
+révélé à la fois plus lent et nettement moins précis sur ce matériel. Le profilage montre que, pour ViTPose et
+DETRPose, le modèle lui-même ne représente qu'une minorité du temps : les vrais leviers sont le détecteur, le
+prétraitement et, pour DETRPose, le pont entre environnements Python.
+
+\tableofcontents
+
+% =============================================================================
+\chapter{Introduction}
+% =============================================================================
+
+\section{Contexte}
+
+psifx (\emph{Psychological and Social Interactions Feature Extraction}) \cite{psifx2024} est une boîte à outils
+open source (Apache 2.0) qui extrait automatiquement des caractéristiques audio, vidéo et textuelles
+d'enregistrements d'interactions humaines, pour des chercheurs en psychologie et en sciences sociales. Côté vidéo,
+psifx intègre au début de ce travail :
+\begin{itemize}
+    \item la segmentation et le suivi de personnes avec SAM3 \cite{hf_sam3}, via \code{transformers} ;
+    \item l'estimation de pose avec MediaPipe Holistic \cite{lugaresi2019mediapipe} (corps, visage, mains) ;
+    \item l'analyse faciale avec OpenFace (licence non commerciale).
+\end{itemize}
+
+L'architecture est homogène. Chaque backend est un module rangé dans
+\nolinkurl{psifx/video/<task>/<backend>/}. Il contient un \code{tool.py} (logique) et un \code{command.py} (interface
+en ligne de commande), hérite d'une classe de base commune à la tâche, et produit des archives de sortie
+standardisées (\code{.tar.gz} contenant un fichier JSON par image).
+
+\section{Cadrage}
+
+L'objectif général du travail, fixé lors de la réunion de lancement, est d'étendre psifx avec des bibliothèques de
+vision récentes en segmentation, suivi et estimation de pose. Les modèles cités dans la description initiale (SAM
+et Sapiens) datant de plusieurs mois, une phase exploratoire devait d'abord vérifier s'ils restaient pertinents.
+Consignes retenues :
+\begin{itemize}
+    \item ne pas consacrer un temps disproportionné à l'exploration ;
+    \item priorité à l'estimation de pose et à la segmentation/suivi ; approches génératives et VLM non prioritaires ;
+    \item pas de contrainte de temps réel obligatoire, le compromis vitesse/précision reste ouvert ;
+    \item s'appuyer sur Matthew Vowels (UNIL), développeur principal de psifx, pour les choix d'intégration.
+\end{itemize}
+
+L'état des lieux du code a montré que la partie segmentation (SAM3) était déjà intégrée par un contributeur
+précédent. Le manque principal se situe donc sur l'estimation de pose \enquote{recherche}, au-delà de MediaPipe :
+c'est le cœur de ce rapport.
+
+\section{Structure du rapport}
+
+Le chapitre~\ref{chap:sota} présente l'état de l'art. Le chapitre~\ref{chap:problematique} formule la
+problématique et les objectifs. Le chapitre~\ref{chap:methodo} décrit la méthodologie : banc de mesure,
+intégration dans psifx, tests et protocole d'optimisation. Le chapitre~\ref{chap:resultats} présente les
+résultats, discutés au chapitre~\ref{chap:discussion}. Le chapitre~\ref{chap:futur} liste les pistes non encore
+testées, avant la conclusion.
+
+% =============================================================================
+\chapter{État de l'art}
+\label{chap:sota}
+% =============================================================================
+
+\section{Mesurer la précision : métriques et fils méthodologiques}
+\label{sec:sota-metriques}
+
+Une revue de huit papiers couvrant près de trente ans (de l'imagerie médicale à la pose 6D récente) a été menée
+sous un angle précis : \emph{comment chacun mesure la précision, et comment il l'améliore}.
+
+\begin{itemize}
+    \item \textbf{A priori de forme.} Les modèles statistiques de forme \cite{neumann1998ssm,kelemen1999elastic}
+    contraignent la segmentation à rester plausible, ce qui limite les erreurs grossières sous bruit ou vue
+    partielle. L'idée réapparaît, apprise et conditionnée par l'image, dans GCE-Pose \cite{li2025gcepose}.
+    Kelemen et al.\ insistent sur la normalisation de la représentation avant d'apprendre la forme, pour ne pas
+    confondre variation de pose et variation de forme.
+    \item \textbf{Stabilité temporelle.} Vacchetti, Lepetit et Fua \cite{vacchetti2004stable} montrent qu'un suivi
+    purement en ligne dérive (\emph{drift}) tandis qu'un recalage purement absolu tremble (\emph{jitter}) : la
+    précision d'un suivi vidéo ne se résume pas à une précision image par image.
+    \item \textbf{Méthodologie d'évaluation comme contribution.} LINEMOD++ \cite{hinterstoisser2012linemod} a
+    servi de référence pendant plus d'une décennie grâce à son jeu de données et son protocole reproductibles.
+    \item \textbf{Relations apprises entre articulations.} Chen et Yuille \cite{chen2014articulated} prédisent les
+    relations spatiales entre parties du corps depuis l'image, précurseur de la généralisation recherchée par les
+    modèles de fondation.
+    \item \textbf{Modèles de fondation.} FoundPose \cite{ornek2023foundpose} exploite des descripteurs DINOv2
+    intermédiaires ; FoundationPose \cite{wen2024foundationpose} unifie pose et suivi 6D (AUC ADD-S 91,5\,\% contre
+    42,1\,\% pour le meilleur concurrent sur YCB-Video), l'écart venant de la gestion explicite des symétries.
+\end{itemize}
+
+Le tableau~\ref{tab:metriques} résume les métriques rencontrées. Trois enseignements ont guidé la suite : (1)~la
+stabilité temporelle est une dimension de précision à part entière ; (2)~le seuil de tolérance change radicalement
+un score (GCE-Pose : 24,8\,\% à 5°2\,cm contre 58,4\,\% à 10°5\,cm) et doit toujours être documenté ;
+(3)~il faut rapporter au moins deux métriques complémentaires.
+
+\begin{table}[H]
+\centering
+\caption{Métriques de précision rencontrées dans la littérature revue.}
+\label{tab:metriques}
+\begin{tabularx}{\textwidth}{@{}lYl@{}}
+\toprule
+Métrique & Ce qu'elle mesure & Utilisée par \\
+\midrule
+PCK & \% de points-clés à moins d'un seuil (relatif à la taille du sujet) & pose 2D \cite{chen2014articulated} \\
+OKS / AP & Similarité des points-clés pondérée par point et par taille, standard COCO & pose 2D \cite{lin2014coco} \\
+Dérive / jitter & Stabilité de l'estimation le long d'une séquence & suivi \cite{vacchetti2004stable} \\
+ADD / ADD-S & Distance moyenne des sommets 3D (ADD-S : tolérante aux symétries) & pose 6D \cite{wen2024foundationpose} \\
+IoU à seuil & Chevauchement boîte ou masque, toujours avec un seuil & \cite{li2025gcepose}, segmentation \\
+n°/m\,cm & \% de prédictions dans une tolérance angle + distance & \cite{li2025gcepose} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Consensus et littérature proche du cas d'usage de psifx}
+
+Une revue de 2026 \cite{shrestha2026survey} dégage deux choix de conception communs aux meilleures méthodes de pose
+2D/3D : une sortie structurée modélisant l'incertitude spatiale, et des architectures multi-échelles haute
+résolution. Deux comparatifs indépendants testent explicitement MediaPipe : sur des mouvements de cirque, ViTPose
+bat nettement YOLOv8 et MediaPipe (MPJPE 0,192\,m, PCK 68,1\,\%) \cite{circus2026mediapipe} ; sur la cinématique de
+la marche, MediaPipe est également dominé \cite{gait2022comparison}. Dans les deux cas, MediaPipe est dominé en
+précision par au moins un modèle de la famille ViTPose/MMPose.
+
+Côté sciences du comportement, l'outil \emph{Feature-Based Behavior Coding} \cite{fbbc2025} s'appuie sur les mêmes
+familles d'outils (MediaPipe Holistic, YOLOv8/v11, RTMPose, DeepLabCut) et montre ce qu'un chercheur fait
+\emph{après} l'extraction de pose (caractéristiques dérivées, UMAP, regroupement supervisé). Une revue systématique
+\cite{markerless_review} signale que DeepLabCut domine environ 81\,\% des publications de suivi sans marqueur chez le
+rongeur, et voit dans cette concentration un risque pour la reproductibilité : argument en faveur de backends
+interchangeables dans psifx. Enfin, le cadre MBRCS \cite{fernandez2026mbrcs} combine précision spatiale, stabilité
+temporelle, robustesse à l'occlusion et fidélité cinématique, car deux modèles de précision similaire par image
+peuvent diverger fortement sur ces autres dimensions.
+
+L'occlusion mutuelle est un cas réel de psifx (deux personnes proches filmées d'un seul point de vue). DEKR
+\cite{geng2021dekr} atteint 67,3\,AP sur CrowdPose, et des travaux récents rapportent encore +2 à +2,5\,AP
+\cite{featureselection2026realtime}. Ces méthodes changent toutefois tout le pipeline multi-personnes : elles
+restent hors du périmètre de cette première passe.
+
+\section{Estimation de pose humaine 2D : candidats}
+\label{sec:sota-pose}
+
+\begin{itemize}
+    \item \textbf{MediaPipe Pose / Holistic} \cite{lugaresi2019mediapipe,forasoft2026posestack} : backend actuel de psifx, conçu pour le
+    temps réel sur mobile ; 33 points pour le corps, plus visage et mains.
+    \item \textbf{RTMPose} \cite{jiang2023rtmpose} (OpenMMLab, Apache 2.0) : approche descendante (détecteur de
+    personnes puis pose), orientée temps réel ; RTMPose-m annonce 75,8\,\% AP COCO. \textbf{RTMW}
+    \cite{jiang2024rtmw} en est la variante corps entier (70,2\,mAP sur COCO-WholeBody). Les deux sont utilisables
+    sans la pile MMPose complète via \code{rtmlib} \cite{rtmlib}.
+    \item \textbf{RTMO} \cite{lu2024rtmo} (OpenMMLab, Apache 2.0) : modèle à un seul étage, sans détecteur séparé,
+    dont la latence est rapportée quasi indépendante du nombre de personnes et qui devient plus rapide que RTMPose
+    au-delà d'environ quatre personnes \cite{mmpose_discussion3135}.
+    \item \textbf{ViTPose} \cite{xu2022vitpose} (Apache 2.0) : transformeur pur avec une tête de décodage légère,
+    état de l'art en précision sur plusieurs benchmarks ; disponible dans \code{transformers} \cite{hf_vitpose}.
+    Approche descendante : il lui faut un détecteur de personnes.
+    \item \textbf{DETRPose} \cite{janampa2025detrpose,detrpose_repo} (Apache 2.0) : un étage, décodeur transformeur.
+    Chiffres publiés (COCO val2017, V100, fp16, TensorRT) : S 67,0\,AP en 4,99\,ms, M 69,4\,AP en 7,01\,ms,
+    L 72,5\,AP en 9,50\,ms.
+    \item \textbf{Sapiens / Sapiens2} \cite{khirodkar2024sapiens,sapiens2_hf} (Meta) : modèles de fondation centrés
+    sur l'humain (pose, segmentation par partie, profondeur, normales), de 0,4 à 5\,milliards de paramètres ;
+    Sapiens2 annonce +4\,mAP en pose par rapport à la première génération \cite{sapiens2_marktechpost}. Licence
+    Meta spécifique \cite{sapiens2_license}, avec des interdictions d'usage (surveillance, biométrie,
+    ré-identification\ldots) à faire valider pour une bibliothèque distribuée publiquement.
+    \item \textbf{YOLO26} \cite{ultralytics2026yolo26} : un seul modèle pour détection, segmentation, pose et suivi,
+    mais sous licence AGPL-3.0 \cite{ultralytics_license}, incompatible en l'état avec psifx (Apache 2.0).
+\end{itemize}
+
+\section{Segmentation et suivi vidéo}
+
+SAM3, déjà intégré, reste un socle pertinent. SAM~3.1 \cite{meta_sam31,learnopencv_sam31} introduit
+\emph{Object Multiplex} (mémoire partagée entre objets suivis, environ 7$\times$ plus rapide à 128 objets), mais
+n'était pas encore supporté par \code{transformers} au moment de l'étude. Sur les benchmarks récents et plus
+difficiles (MOSEv2 \cite{mosev2}), les meilleures soumissions accompagnent SAM3 d'un re-prompting ou d'un suivi
+externe \cite{pvuw2026tracking,pvuw2026reprompt} plutôt que de l'utiliser tel quel. Des variantes légères existent
+(MobileSAM \cite{zhang2023mobilesam} et EfficientSAM \cite{efficientsam_repo}, toutes deux Apache 2.0 ; FastSAM, en
+AGPL-3.0 \cite{awesome_efficient_sam}). SAM-pose2seg/BBoxMaskPose \cite{sampose2seg,bboxmaskpose_repo} exploite les
+points-clés comme invites de segmentation, mais sous GPL-3.0 et avec une pile de dépendances lourde. La segmentation
+amodale \cite{a2vis,diffusion_amodal} vise exactement l'occlusion mutuelle, sans outil mûr à ce jour. Les approches
+vision-langage (HumanVLM \cite{humanvlm}, LLaVA-Pose \cite{llavapose}) restent des travaux de recherche et ont été
+volontairement écartées.
+
+\section{Optimisation d'inférence}
+\label{sec:sota-optim}
+
+Par coût d'implémentation croissant :
+\begin{itemize}
+    \item \textbf{\code{torch.compile} et attention optimisée} : compilation en noyaux fusionnés, sans
+    ré-entraînement \cite{hf_torch_compile,casson_compile_vit,pytorch_flexattention}. Toute nouvelle forme d'entrée
+    déclenche une recompilation, sauf avec des formes dynamiques \cite{hf_diffusers_fp16}.
+    \item \textbf{Précision réduite} : fp16 sur GPU \cite{ort_float16} ; quantification INT8, statique (recommandée
+    pour les CNN) ou dynamique (recommandée pour les transformeurs) \cite{ort_quantization}. L'accélération INT8
+    suppose un matériel adapté (VNNI côté CPU, Tensor Cores INT8 côté GPU, TensorRT \cite{ort_tensorrt}). Pour
+    PyTorch, \code{torch.ao.quantization} est déprécié au profit de \code{torchao}
+    \cite{torch_ao_migration,torchao_inference}. Des revues couvrent ces techniques pour les transformeurs de vision
+    \cite{vit_quant_survey,vit_edge_survey,nvidia_modelopt,nvidia_fp8_tensorrt}.
+    \item \textbf{Distillation} (OKDHP \cite{li2021okdhp}, distillation sensible à l'incertitude
+    \cite{uncertainty_kd_6dof}) et \textbf{élagage structuré} \cite{vit_edge_survey} : coûteux (entraînement), à
+    réserver au cas où \enquote{précision Sapiens2 en temps réel} deviendrait un objectif explicite.
+\end{itemize}
+
+\section{Synthèse : licences et intégrabilité}
+
+\begin{table}[H]
+\centering
+\caption{Candidats, licences et intégrabilité dans psifx (Apache 2.0).}
+\label{tab:licences}
+\begin{tabularx}{\textwidth}{@{}llY@{}}
+\toprule
+Modèle & Licence & Intégrabilité \\
+\midrule
+RTMPose, RTMW, RTMO & Apache 2.0 & Directe (\code{rtmlib}, ONNX Runtime) \\
+ViTPose & Apache 2.0 & Directe (\code{transformers}, déjà une dépendance) \\
+DETRPose & Apache 2.0 & Environnement séparé (\code{numpy==1.23.5} imposé) \\
+Sapiens2 & Meta (restrictive) & Licence à valider ; environnement Python 3.12 séparé \\
+YOLO26, FastSAM & AGPL-3.0 & Bloquée sans validation (copyleft fort) \\
+SAM-pose2seg / BBoxMaskPose & GPL-3.0 & Bloquée ; pile MMDetection/MMPose lourde \\
+MobileSAM, EfficientSAM & Apache 2.0 & Directe, en réserve (pas de besoin actuel) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =============================================================================
+\chapter{Problématique et objectifs}
+\label{chap:problematique}
+% =============================================================================
+
+\section{Problématique}
+
+MediaPipe, seul backend de pose de psifx, est systématiquement dominé en précision dans la littérature. Mais la
+précision ne suffit pas : pour une bibliothèque \enquote{prête à l'emploi} destinée à des chercheurs en sciences
+humaines, la stabilité temporelle, le coût de calcul, la licence et la cohérence architecturale comptent autant.
+
+\begin{quote}
+\emph{Comment choisir, de façon objective et reproductible, quel(s) backend(s) de pose estimation intégrer à psifx
+pour améliorer la précision d'extraction sans compromettre les contraintes propres au projet (stabilité temporelle,
+coût de calcul praticable, licence compatible, cohérence architecturale) ?}
+\end{quote}
+
+\begin{description}[leftmargin=1.2cm]
+    \item[Q1] Quelle est l'ampleur réelle du gain de précision des candidats par rapport à MediaPipe ?
+    \item[Q2] Ce gain s'accompagne-t-il d'une meilleure stabilité temporelle en vidéo, ou les deux dimensions
+    sont-elles indépendantes ?
+    \item[Q3] Quel est le compromis vitesse/mémoire de chaque candidat, sur GPU grand public et sur CPU ?
+    \item[Q4] Un candidat domine-t-il sur toutes les dimensions, ou faut-il arbitrer via un front de Pareto ?
+\end{description}
+
+S'y ajoute une question apparue en cours de travail :
+\begin{description}[leftmargin=1.2cm]
+    \item[Q5] Les optimisations d'inférence (fp16, compilation, quantification) rendent-elles les candidats plus
+    praticables, et à quel coût en précision ?
+\end{description}
+
+\section{Objectifs}
+
+\begin{table}[H]
+\centering
+\caption{Objectifs et livrables.}
+\begin{tabularx}{\textwidth}{@{}lYY@{}}
+\toprule
+\# & Objectif & Livrable \\
+\midrule
+O1 & Protocole de mesure reproductible, métriques explicites & Chapitre~\ref{chap:methodo} \\
+O2 & Banc de mesure exécutable, rejouable dans le devcontainer & \code{research/benchmark/} \\
+O3 & Exécution du banc sur les candidats & Résultats bruts (CSV) et chapitre~\ref{chap:resultats} \\
+O4 & Synthèse en front de Pareto et classement & Chapitres~\ref{chap:resultats} et \ref{chap:discussion} \\
+O5 & Intégration des candidats dans psifx, testée, isolée par branche & \code{psifx/video/pose/}\textit{<modèle>}\code{/}, tests \\
+O6 & Mesure des optimisations d'inférence par modèle & Branches \code{optim/*}, section~\ref{sec:res-optim} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =============================================================================
+\chapter{Méthodologie}
+\label{chap:methodo}
+% =============================================================================
+
+Le travail s'est déroulé en trois passes : (1)~un banc de recherche indépendant de psifx, pour choisir les
+candidats ; (2)~l'intégration des candidats retenus dans psifx, avec des tests ; (3)~la mesure des optimisations
+d'inférence sur ces intégrations.
+
+\section{Environnement}
+
+Toutes les mesures ont été faites dans le devcontainer du projet (Ubuntu 22.04, CUDA 12.1, Python 3.11, PyTorch
+2.8.0, \code{transformers} 5.3.0) sur un portable équipé d'une NVIDIA RTX 4060 Laptop (8\,Go) et d'un CPU avec
+AVX-VNNI. Le GPU étant partagé avec d'autres applications de l'hôte (environ 0,9 à 2\,Go occupés selon les
+passes), les vitesses absolues sont indicatives ; les comparaisons au sein d'une même passe restent valides. Les
+modèles dont les dépendances entrent en conflit avec psifx tournent dans des environnements séparés, appelés en
+sous-processus : Sapiens2 (Python 3.12) et DETRPose (\code{numpy==1.23.5}, PyTorch 2.14).
+
+\section{Banc de recherche}
+\label{sec:methodo-banc}
+
+\subsection{Données}
+
+\begin{itemize}
+    \item \textbf{COCO val2017, sous-ensemble de 50 images} \cite{lin2014coco}, tirées avec une graine fixe parmi
+    les images comportant \emph{exactement une} personne annotée avec au moins cinq points-clés visibles
+    (\code{prepare_coco_subset.py}). Ce choix rend l'appariement prédiction/vérité sans ambiguïté.
+    \item \textbf{\code{example/data/Video.mp4}} (déjà dans psifx) : interaction à deux personnes, 150 premières
+    images, sans vérité terrain. Sert à la stabilité temporelle et à la vitesse.
+\end{itemize}
+
+\subsection{Métriques}
+
+Toutes les sorties sont ramenées aux 17 points COCO dans le même ordre, ce qui rend le calcul indépendant du modèle.
+
+\paragraph{OKS.} Pour une personne de vérité terrain d'aire $s^2$ et des constantes COCO $\sigma_i$ par point :
+\begin{equation}
+\mathrm{OKS} = \frac{1}{|V|}\sum_{i \in V} \exp\!\left(-\frac{d_i^2}{2\, s^2\, (2\sigma_i)^2}\right)
+\end{equation}
+où $V$ est l'ensemble des points visibles dans la vérité terrain et $d_i$ la distance entre prédiction et vérité.
+
+\paragraph{PCK@0,2.} Proportion des points visibles prédits à moins de $0{,}2 \times D$ de la vérité, où $D$ est la
+diagonale de la boîte englobante de la personne.
+
+\paragraph{Taux de détection.} Proportion d'images où le modèle trouve la personne annotée. Une image non détectée
+compte pour OKS = PCK = 0, pour qu'un modèle ne puisse pas paraître meilleur en ignorant les cas difficiles.
+
+\paragraph{Jerk normalisé (stabilité temporelle).} Faute de vérité terrain vidéo, on mesure la régularité des
+trajectoires (dans l'esprit de la dimension \enquote{stabilité temporelle} du MBRCS \cite{fernandez2026mbrcs}) :
+pour chaque point-clé, la norme moyenne de la dérivée troisième de la position, calculée par différences finies
+($\Delta t = 1/\mathrm{fps}$), divisée par une échelle de la personne (distance épaule--hanche). Plus la valeur
+est basse, plus le tracé est stable.
+
+\paragraph{Vitesse et mémoire.} Images par seconde et latence moyenne sur la vidéo ; pic mémoire GPU.
+
+\subsection{Synthèse}
+
+Le front de Pareto retient les modèles qu'aucun autre ne domine simultanément en précision (OKS), en vitesse (FPS)
+et en stabilité (inverse du jerk). Un classement pondéré complète le front : poids égaux sur ces trois
+dimensions, chacune normalisée min-max.
+
+\section{Intégration dans psifx}
+\label{sec:methodo-integration}
+
+\subsection{Remplacement direct de MediaPipe}
+
+Chaque modèle retenu est intégré comme un nouveau backend, \code{psifx video pose }\textit{<modèle>}, avec exactement la même
+interface que MediaPipe (\code{single-inference}, \code{multi-inference} avec masques SAM3, \code{visualization})
+et le même format d'archive. Un modèle peut ainsi remplacer MediaPipe dans n'importe quel pipeline psifx
+existant, et la comparaison porte sur une sortie identique.
+
+Une classe de base commune, \code{Coco17PoseEstimationTool}, factorise la boucle vidéo, l'écriture de l'archive, la
+gestion des masques et la sélection de la personne (la plus grande boîte, comme MediaPipe qui suit une seule
+personne). Chaque modèle n'implémente que \code{predict(image)}, ce qui isole son effet. Un point d'extension,
+\code{predict_video}, permet aux modèles exécutés hors processus (DETRPose) de traiter une vidéo entière en un seul
+appel.
+
+\subsection{Stratégie de branches}
+
+Pour isoler l'impact de chaque modèle et de chaque optimisation :
+\begin{itemize}
+    \item \code{dev}, issue de \code{main} : recherche, tests, base COCO-17, outils de mesure communs ;
+    \item une branche \code{feature/pose-}\textit{<modèle>} par modèle (RTMPose, RTMO, ViTPose, DETRPose), issue de
+    \code{dev} ;
+    \item une branche \code{optim/}\textit{<modèle>}\code{-}\textit{<optimisations>} par modèle, issue de la branche du modèle.
+\end{itemize}
+Les résultats sont écrits dans un fichier CSV par branche, afin que les merges ne créent pas de conflit ; un script
+lit les résultats de toutes les branches sans checkout ni merge. Rien n'est mergé dans \code{dev} ni \code{main}
+tant que les résultats ne sont pas validés.
+
+\section{Tests}
+\label{sec:methodo-tests}
+
+\begin{itemize}
+    \item \textbf{Tests unitaires} : métriques (OKS, PCK, jerk, appariement), aides d'évaluation, outil de pose de
+    base, formatage MediaPipe, base COCO-17, chaque modèle (avec des faux modèles, sans téléchargement) et les
+    aides d'optimisation ONNX.
+    \item \textbf{Test de non-régression de précision} : 8 images COCO (la personne annotée y occupe la plus grande
+    part de l'image), commitées dans le dépôt (900\,Ko), mises en vidéo puis passées dans la vraie commande psifx.
+    Chaque modèle doit dépasser un OKS et un PCK minimaux, fixés quelques points sous la valeur mesurée.
+\end{itemize}
+
+\section{Mesure via la commande psifx}
+
+Le banc de recherche appelle chaque modèle directement sur des images. Pour mesurer les intégrations, les images COCO
+sont placées au centre d'un cadre 640$\times$640 à bandes noires (proportions conservées), assemblées en une vidéo
+quasi sans perte (H.264, CRF 10), puis traitées par la commande psifx réelle. L'archive produite est notée avec les
+mêmes OKS et PCK, après transformation inverse des coordonnées.
+
+\section{Protocole d'optimisation}
+\label{sec:methodo-optim}
+
+\begin{itemize}
+    \item \textbf{Vitesse en régime établi} (\code{time_psifx_pose.py}) : l'outil est chargé une fois, deux passes
+    d'échauffement sur les 50 images, puis trois passes chronométrées avec synchronisation CUDA.
+    \item \textbf{Précision} : la commande psifx complète sur les 50 images, pour chaque configuration.
+    \item \textbf{Optimisations par famille de modèle} :
+    \begin{itemize}
+        \item modèles ONNX (RTMPose, RTMO) : conversion fp16 (entrées et sorties gardées en float32) ;
+        quantification INT8 statique QDQ S8S8, poids par canal, restreinte à \code{Conv}/\code{MatMul}, calibrée
+        sur 32 images d'une \emph{autre} vidéo (\code{tests/integration/data/Multi.mp4}) pour ne pas calibrer sur
+        les images évaluées \cite{ort_quantization,ort_float16} ;
+        \item modèles PyTorch (ViTPose, DETRPose) : \code{torch.autocast} fp16 et \code{torch.compile}
+        \cite{hf_torch_compile}.
+    \end{itemize}
+    \item \textbf{Profilage} : décomposition du temps par étape (ViTPose) et séparation entre coût fixe et coût par
+    image (DETRPose, comparaison d'appels de 50 et 200 images).
+\end{itemize}
+
+% =============================================================================
+\chapter{Résultats}
+\label{chap:resultats}
+% =============================================================================
+
+\section{Banc de recherche}
+\label{sec:res-banc}
+
+\begin{table}[H]
+\centering
+\caption{Banc de recherche : précision sur 50 images COCO, vitesse et stabilité sur \code{Video.mp4} (150
+images). Sapiens2-1B : valeurs reprises d'une passe précédente (mémoire insuffisante lors de cette passe).}
+\label{tab:banc}
+\small
+\begin{tabular}{@{}lccccccc@{}}
+\toprule
+Backend & OKS & PCK@0,2 & Détection & FPS & Latence (ms) & Jerk & Pareto \\
+\midrule
+MediaPipe (actuel) & 0,235 & 0,376 & 72\,\% & 23,4 & 42,8 & \textbf{45,6} & oui \\
+RTMPose & 0,859 & 0,930 & 100\,\% & 28,8 & 34,8 & 603,2 & oui \\
+RTMO & 0,830 & 0,887 & 100\,\% & \textbf{54,3} & \textbf{18,4} & 147,2 & oui \\
+DETRPose-M & 0,832 & 0,910 & 96\,\% & 13,3$^\dagger$ & 75,5$^\dagger$ & 287,7 & oui \\
+ViTPose & \textbf{0,890} & \textbf{0,968} & 100\,\% & 21,1 & 47,4 & 398,5 & oui \\
+Sapiens2-0.4B & 0,581 & 0,732 & 96\,\% & 1,3 & 761,4 & 64,9 & oui \\
+Sapiens2-0.8B & 0,574 & 0,726 & 94\,\% & 1,0 & 1033,4 & 115,5 & non \\
+Sapiens2-1B & 0,548 & 0,694 & 90\,\% & 0,86 & 1164,7 & -- & -- \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+\footnotesize $^\dagger$ Temps mesuré sans synchronisation CUDA, probablement sous-estimé (voir
+section~\ref{sec:res-optim}).
+\end{table}
+
+Classement pondéré (poids égaux, min-max) : 1.~RTMO (0,720), 2.~RTMPose (0,491), 3.~ViTPose (0,473),
+4.~MediaPipe (0,473), 5.~DETRPose (0,410), 6.~Sapiens2-0.4B (0,404), 7.~Sapiens2-0.8B (0,288).
+
+\begin{figure}[H]
+\centering
+\IfFileExists{../benchmark/results/pareto.png}{%
+\includegraphics[width=0.85\textwidth]{../benchmark/results/pareto.png}}{\fbox{pareto.png introuvable}}
+\caption{Front de Pareto précision/vitesse du banc de recherche (\code{research/benchmark/results/pareto.png}).}
+\label{fig:pareto}
+\end{figure}
+
+Dans ce banc, ViTPose reçoit les boîtes de la vérité terrain COCO (évaluation \enquote{boîtes oracle}, qui isole
+la qualité de la pose de celle de la détection), et celles du détecteur de RTMPose sur la vidéo.
+
+\section{Intégration dans psifx}
+\label{sec:res-integration}
+
+\begin{table}[H]
+\centering
+\caption{Modèles intégrés, mesurés via la commande psifx (vidéo de 50 images COCO, et extrait de test de 8 images).
+Ici, ViTPose utilise un vrai détecteur (RT-DETR) et non les boîtes de la vérité terrain.}
+\label{tab:integration}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+& \multicolumn{3}{c}{50 images} & \multicolumn{2}{c}{8 images (test)} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-6}
+Commande psifx & OKS & PCK & Détection & OKS & PCK \\
+\midrule
+\code{mediapipe} (actuel) & 0,283 & 0,432 & 84\,\% & 0,647 & 0,968 \\
+\code{rtmpose} & \textbf{0,873} & \textbf{0,935} & 98\,\% & 0,935 & 0,988 \\
+\code{vitpose} & 0,850 & 0,914 & 96\,\% & 0,943 & 0,988 \\
+\code{detrpose} & 0,840 & 0,922 & 98\,\% & \textbf{0,951} & \textbf{1,000} \\
+\code{rtmo} & 0,826 & 0,880 & 92\,\% & 0,943 & \textbf{1,000} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Les quatre intégrations reproduisent les niveaux du banc de recherche (écarts de 0,01 à 0,04 d'OKS, expliqués par
+le passage en vidéo, la sélection d'une seule personne et, pour ViTPose, le passage des boîtes oracle à un vrai
+détecteur). Tous gagnent plus de 0,5 d'OKS sur MediaPipe.
+
+\section{Optimisations d'inférence}
+\label{sec:res-optim}
+
+\begin{table}[H]
+\centering
+\caption{Vitesse en régime établi (50 images COCO) et précision via la commande psifx, par modèle et par
+optimisation. Gain relatif à fp32 sur le même appareil. Pour DETRPose : temps du modèle seul.}
+\label{tab:optim}
+\small
+\begin{tabular}{@{}lllrrcc@{}}
+\toprule
+Modèle & Appareil & Configuration & ms/image & Gain & OKS & Détection \\
+\midrule
+\multirow{5}{*}{RTMPose} & CPU & fp32 & 274,5 & -- & 0,873 & 98\,\% \\
+& CPU & int8 & 436,9 & $-59$\,\% & 0,647 & 98\,\% \\
+& GPU & fp32 & 24,6 & -- & 0,873 & 98\,\% \\
+& GPU & fp16 & 22,1 & $+11$\,\% & 0,873 & 98\,\% \\
+& GPU & int8 & 32,3 & $-31$\,\% & 0,648 & 96\,\% \\
+\midrule
+\multirow{5}{*}{RTMO} & CPU & fp32 & 149,1 & -- & 0,826 & 92\,\% \\
+& CPU & int8 & 255,6 & $-42$\,\% & 0,584 & 72\,\% \\
+& GPU & fp32 & 13,0 & -- & 0,826 & 92\,\% \\
+& GPU & \textbf{fp16} & \textbf{9,1} & $\mathbf{+43}$\,\% & 0,826 & 92\,\% \\
+& GPU & int8 & 17,7 & $-26$\,\% & 0,580 & 70\,\% \\
+\midrule
+\multirow{4}{*}{ViTPose} & GPU & fp32 & 55,1 & -- & 0,850 & 96\,\% \\
+& GPU & fp16 & 56,9 & $-3$\,\% & 0,850 & 96\,\% \\
+& GPU & compile & 64,5 & $-17$\,\% & -- & -- \\
+& GPU & fp16 + compile & 50,0 & $+10$\,\% & 0,851 & 96\,\% \\
+\midrule
+\multirow{5}{*}{DETRPose} & CPU & fp32 & 297,9 & -- & 0,840 & 98\,\% \\
+& GPU & fp32 & 23,9 & -- & 0,840 & 98\,\% \\
+& GPU & fp16 & 35,8 & $-33$\,\% & 0,840 & 98\,\% \\
+& GPU & compile & 15,4 & $+55$\,\% & 0,839 & 98\,\% \\
+& GPU & fp16 + compile & 11,9 & $\times 2{,}0$ & 0,840 & 98\,\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Où part le temps}
+
+\begin{table}[H]
+\centering
+\begin{minipage}[t]{0.48\textwidth}
+\centering
+\caption{ViTPose fp32 : temps par étape (ms/image).}
+\label{tab:vitpose-profil}
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Étape & ms & Part \\
+\midrule
+Prétrait. détecteur (CPU) & 2,7 & 5\,\% \\
+\textbf{Détecteur RT-DETR} & \textbf{26,7} & \textbf{45\,\%} \\
+Post-trait. détecteur & 0,5 & 1\,\% \\
+\textbf{Prétrait. ViTPose (CPU)} & \textbf{12,8} & \textbf{22\,\%} \\
+Modèle ViTPose & 13,5 & 23\,\% \\
+Post-trait. ViTPose & 3,1 & 5\,\% \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.48\textwidth}
+\centering
+\caption{DETRPose, GPU : coût fixe et coût par image, de bout en bout.}
+\label{tab:detrpose-pont}
+\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Config. & Fixe & ms/img & Modèle \\
+\midrule
+fp32 & 2,6\,s & 90,1 & 21,7 \\
+fp16 + compile & 8,2\,s & 101,6 & 14,4 \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+\end{table}
+
+Pour ViTPose, le transformeur ciblé par l'optimisation ne représente qu'environ 23\,\% du temps : même un gain
+parfait sur lui plafonnerait à environ 1,3$\times$ de bout en bout. Pour DETRPose, environ 70\,ms par image partent
+dans le pont entre psifx et l'environnement de DETRPose (écriture et relecture PNG, prétraitement PIL) : l'effet
+de l'optimisation du modèle disparaît presque entièrement de bout en bout.
+
+% =============================================================================
+\chapter{Discussion}
+\label{chap:discussion}
+% =============================================================================
+
+\section{Réponses aux questions}
+
+\paragraph{Q1 -- Gain de précision.} Il est massif : de 0,235 (MediaPipe) à 0,830--0,890 d'OKS dans le banc de
+recherche, et de 0,283 à 0,826--0,873 via la commande psifx. Nos propres mesures confirment ainsi les comparatifs
+indépendants \cite{circus2026mediapipe,gait2022comparison}. Sapiens2, pourtant le plus récent, perd 25 à 30 points
+face aux meilleurs candidats dans nos conditions (détecteur par défaut, bf16), et toutes ses tailles restent sous
+1,5 image/s.
+
+\paragraph{Q2 -- Stabilité temporelle.} Précision et stabilité sont largement indépendantes, comme le suggère le
+cadre MBRCS \cite{fernandez2026mbrcs}. MediaPipe est le plus stable mais le moins précis : il lisse ses
+prédictions dans le temps, alors que les autres modèles traitent chaque image indépendamment. RTMPose est le plus
+précis des modèles rapides mais le moins stable. RTMO et DETRPose se situent entre les deux. Le jerk ne fait donc
+pas qu'opposer des modèles : il compare aussi des modèles avec et sans lissage temporel.
+
+\paragraph{Q3 -- Vitesse et mémoire.} Sur GPU, RTMO est de loin le plus rapide (13\,ms/image en fp32, 9,1\,ms en
+fp16 via psifx). Sur CPU, tous les candidats restent utilisables pour du traitement différé (150 à 300\,ms/image),
+avec un facteur d'environ 11 en faveur du GPU, bien plus que n'importe quelle optimisation de modèle.
+
+\paragraph{Q4 -- Dominance.} Aucun modèle ne domine sur toutes les dimensions : six configurations sur sept sont
+sur le front de Pareto. Le choix se resserre à deux candidats :
+\begin{itemize}
+    \item \textbf{ViTPose} (ou RTMPose, très proche via psifx) si la précision prime ;
+    \item \textbf{RTMO} pour le compromis précision/vitesse/simplicité : un seul modèle, pas de détecteur à
+    maintenir, premier du classement pondéré, et le seul à profiter pleinement du fp16.
+\end{itemize}
+Tous deux sont sous Apache 2.0. Ce choix relève d'une décision produit (traitement différé où la précision prime,
+ou pipeline proche du temps réel) à prendre avec le responsable et Matthew Vowels.
+
+\paragraph{Q5 -- Optimisations.} Le fp16 est un gain gratuit sur GPU pour les modèles ONNX (+11\,\% RTMPose,
++43\,\% RTMO), sans aucune perte de précision. \code{torch.compile} combiné au fp16 double la vitesse du modèle
+DETRPose et gagne 10\,\% sur ViTPose, mais coûte de 8\,s à 2\,min de compilation à chaque appel de la commande, et
+son effet est masqué par les étapes hors modèle. L'INT8 statique est à écarter sur ce matériel : plus lent sur CPU
+comme sur GPU, et 23 à 24 points d'OKS en moins.
+
+\section{Pourquoi l'INT8 échoue ici}
+
+Trois causes, cohérentes avec la documentation d'ONNX Runtime \cite{ort_quantization} :
+\begin{enumerate}
+    \item dans les modèles OpenMMLab, l'activation SiLU (\code{Sigmoid} $\times$ \code{Mul}) reste en float entre
+    chaque convolution, ce qui impose une paire Quantize/Dequantize à chaque couche et annule le gain des
+    convolutions INT8, même sur un CPU doté d'AVX-VNNI ;
+    \item le provider CUDA n'a pas de vrais noyaux INT8 pour ce format ; il faudrait TensorRT et les Tensor Cores INT8
+    \cite{ort_tensorrt} ;
+    \item la perte de précision vient des convolutions elles-mêmes : ne quantifier que les \code{Conv} donne le
+    même OKS (0,657 contre 0,647 pour RTMPose).
+\end{enumerate}
+
+\section{Enseignements méthodologiques}
+
+Plusieurs écueils rencontrés valent d'être notés, car ils faussent silencieusement des mesures :
+\begin{itemize}
+    \item \textbf{Chronométrer sans synchronisation CUDA} : l'exécution GPU est asynchrone, le temps mesuré
+    n'inclut alors que le lancement des noyaux \cite{pytorch_cuda_async}. Le script DETRPose du banc de recherche
+    avait ce défaut ; le chiffre de 13,3\,FPS du tableau~\ref{tab:banc} est donc à remesurer.
+    \item \textbf{Retombée silencieuse sur CPU} : sans cuDNN sur le \code{LD_LIBRARY_PATH}, \code{onnxruntime-gpu}
+    s'exécute sur CPU sans erreur bloquante. Les outils psifx lèvent désormais une erreur explicite.
+    \item \textbf{Quantification naïve} : quantifier tous les opérateurs a donné un OKS nul. La sortie du détecteur
+    YOLOX concatène coordonnées (0 à 640) et scores (0 à 1), et une seule échelle INT8 ramène tous les scores à 0.
+    Un test de non-régression couvre désormais ce cas.
+    \item \textbf{Conflits de dépendances} : installer \code{onnx} 1.23 fait passer protobuf en version 7 et casse
+    MediaPipe ; installer les dépendances de DETRPose dans l'environnement de psifx casse numpy, scipy et OpenCV.
+    D'où les environnements séparés et les versions épinglées.
+    \item \textbf{Contention GPU} : un GPU partagé fausse les vitesses absolues ; seules les comparaisons au sein
+    d'une même passe sont fiables.
+    \item \textbf{Profiler avant d'optimiser} : la cible annoncée de l'optimisation (le transformeur pour ViTPose,
+    le modèle pour DETRPose) n'était pas le goulot.
+\end{itemize}
+
+\section{Limites}
+
+\begin{itemize}
+    \item Échantillons réduits (50 et 8 images COCO, une seule personne annotée par image) : les comparaisons
+    relatives sont valides, pas les valeurs absolues face à val2017 complet. Le sous-comptage de DETRPose sur les
+    scènes très peuplées (1 personne trouvée sur 26 au seuil 0,5) n'est pas capturé par ce protocole.
+    \item Une seule vidéo pour la stabilité, sans vérité terrain ; le jerk est biaisé par le lissage de MediaPipe.
+    \item L'occlusion mutuelle, cas réel de psifx, n'est pas évaluée spécifiquement (CrowdPose non utilisé).
+    \item Les intégrations ne suivent qu'une personne par vidéo, comme MediaPipe ; le multi-personnes passe par les
+    masques SAM3.
+    \item Licence de Sapiens2 non validée ; Sapiens2-1B non re-mesuré dans la dernière passe.
+\end{itemize}
+
+% =============================================================================
+\chapter{Travaux futurs}
+\label{chap:futur}
+% =============================================================================
+
+\section{Optimisations non encore testées}
+
+\begin{table}[H]
+\centering
+\caption{Pistes d'optimisation restantes, par modèle, classées par priorité.}
+\label{tab:futur}
+\small
+\begin{tabularx}{\textwidth}{@{}lYl@{}}
+\toprule
+Modèle & Piste & Priorité \\
+\midrule
+\multirow{4}{*}{RTMPose} & Inférer toutes les personnes en un seul batch (\code{rtmlib} appelle le modèle une fois par personne) & Haute \\
+& Détecter une image sur N et suivre les boîtes entre deux détections & Haute \\
+& TensorRT (fp16, puis INT8 sur Tensor Cores) \cite{ort_tensorrt} & Haute \\
+& IOBinding et CUDA graphs \cite{ort_cuda,optimum_gpu} ; preset \code{lightweight} & Moyenne \\
+\midrule
+\multirow{4}{*}{RTMO} & TensorRT fp16 (le modèle représente presque tout le temps de calcul) & Haute \\
+& Traiter plusieurs images vidéo par appel (dimension batch dynamique) & Haute \\
+& IOBinding, CUDA graphs ; prétraitement sur GPU ; tailles S et L & Moyenne \\
+& TensorRT INT8 avec calibration soignée & Moyenne \\
+\midrule
+\multirow{4}{*}{ViTPose} & Détecteur plus léger (45\,\% du temps) & Haute \\
+& Détecter une image sur N et suivre les boîtes & Haute \\
+& Prétraitement sur GPU (22\,\% du temps) & Haute \\
+& \code{torch.compile} à formes fixes avec cache ; ViTPose++ ; TensorRT ; INT8 via \code{torchao} & Moyenne à basse \\
+\midrule
+\multirow{4}{*}{DETRPose} & Pont efficace : images brutes en mémoire au lieu de PNG & Haute \\
+& Sous-processus persistant (pas de rechargement ni de recompilation par vidéo) & Haute \\
+& Prétraitement sur GPU ; tester DETRPose avec le numpy de psifx & Haute à moyenne \\
+& Export TensorRT fourni par le dépôt ; tailles N, S, L & Moyenne \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Distillation, élagage et quantification avec ré-entraînement restent hors de portée à court terme
+(section~\ref{sec:sota-optim}).
+
+\section{Au-delà de l'optimisation}
+
+\begin{itemize}
+    \item Choisir avec le responsable et Matthew Vowels entre ViTPose et RTMO, puis merger les branches retenues dans
+    \code{dev}, avec un tableau récapitulatif, et enfin dans \code{main}.
+    \item Remesurer DETRPose dans le banc de recherche avec une synchronisation CUDA, et toutes les vitesses sur un GPU
+    non partagé.
+    \item Évaluer l'occlusion mutuelle (CrowdPose, ou occlusion volontaire sur \code{Video.mp4}) et envisager DEKR
+    si le besoin se confirme \cite{geng2021dekr}.
+    \item Surveiller l'arrivée de SAM~3.1 dans \code{transformers} ; d'ici là, tester un re-prompting autour de SAM3
+    \cite{pvuw2026reprompt}.
+    \item Corps entier : RTMW \cite{jiang2024rtmw} pour retrouver les mains et le visage, que les modèles COCO-17 ne
+    fournissent pas, contrairement à MediaPipe Holistic.
+    \item Faire valider la licence de Sapiens2 avant tout nouvel investissement.
+\end{itemize}
+
+% =============================================================================
+\chapter{Conclusion}
+% =============================================================================
+
+Ce travail a établi, mesures à l'appui, que le backend de pose actuel de psifx est très largement dépassé en
+précision par plusieurs modèles récents sous licence compatible. Quatre d'entre eux (RTMPose, RTMO, ViTPose,
+DETRPose) sont désormais intégrés à psifx comme remplaçants directs de MediaPipe, avec des tests unitaires, un
+test de non-régression de précision sur COCO et un outillage de mesure partagé entre branches. Aucun modèle ne
+domine sur toutes les dimensions : ViTPose ou RTMPose pour la précision, RTMO pour le compromis
+vitesse/simplicité, en particulier en fp16 (110 images/s sans perte de précision).
+
+Les mesures d'optimisation rappellent qu'un gain annoncé sur un modèle ne se traduit pas forcément de bout en
+bout : il faut profiler la chaîne complète avant d'optimiser, et vérifier la précision après chaque optimisation.
+La prochaine étape est le choix du modèle cible avec le responsable et Matthew Vowels, suivi des merges et des
+optimisations prioritaires identifiées au chapitre~\ref{chap:futur}.
+
+% =============================================================================
+\appendix
+\chapter{Reproduction}
+% =============================================================================
+
+\section{Branches}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\begin{tabular}{@{}ll@{}}
+\toprule
+Branche & Contenu \\
+\midrule
+\code{dev} & Recherche, banc, tests, base COCO-17, aides ONNX, mesure \\
+\code{feature/pose-rtmpose} & \code{psifx video pose rtmpose} \\
+\code{feature/pose-rtmo} & \code{psifx video pose rtmo} \\
+\code{feature/pose-vitpose} & \code{psifx video pose vitpose} \\
+\code{feature/pose-detrpose} & \code{psifx video pose detrpose} \\
+\code{optim/rtmpose-fp16-int8} & \code{--precision fp16|int8} \\
+\code{optim/rtmo-fp16-int8} & \code{--precision fp16|int8} \\
+\code{optim/vitpose-compile-fp16} & \code{--fp16}, \code{--compile} \\
+\code{optim/detrpose-compile-fp16} & \code{--fp16}, \code{--compile} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Commandes}
+
+Banc de recherche (\code{research/benchmark/}) :
+{\footnotesize
+\begin{verbatim}
+python prepare_coco_subset.py --n 50
+python run_accuracy.py --backends mediapipe,rtmpose,vitpose,rtmo,detrpose
+python run_video_benchmark.py --backends mediapipe,rtmpose,vitpose,rtmo,detrpose
+python aggregate_results.py
+\end{verbatim}
+}
+
+Intégrations et optimisations :
+{\footnotesize
+\begin{verbatim}
+pytest tests/unit
+pytest tests/integration/video/test_pose_coco_accuracy.py -s
+python run_psifx_cli_benchmark.py --tool rtmo \
+    --extra="--device cuda --precision fp16"
+python time_psifx_pose.py --tool rtmo --device cuda \
+    --kwargs '{"precision": "fp16"}'
+python compare_psifx_cli.py
+\end{verbatim}
+}
+
+\section{Versions logicielles}
+
+PyTorch 2.8.0 (cu128), \code{transformers} 5.3.0, \code{rtmlib} 0.0.16, \code{onnxruntime-gpu} 1.20.2,
+\code{onnx} 1.17.0, protobuf 4.25.9 (exigé par MediaPipe 0.10.14), numpy 2.0.2. Environnement DETRPose : Python
+3.11.9, PyTorch 2.14.1 (cu130), numpy 1.23.5.
+
+\printbibliography[heading=bibintoc, title={Bibliographie}]
+
+\end{document}
