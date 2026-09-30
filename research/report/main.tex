@@ -38,6 +38,8 @@
 % backend=bibtex : compile sans biber (localement et sur Overleaf).
 \usepackage[backend=bibtex, style=ieee]{biblatex}
 \addbibresource{references.bib}
+% Le style ieee n'a pas de traduction française pour le numéro d'article (champ eid).
+\DefineBibliographyStrings{french}{artno = {art.~n\textsuperscript{o}}}
 
 % --- Helpers ---
 \newcommand{\code}[1]{\texttt{\detokenize{#1}}}
@@ -97,7 +99,7 @@
     {\large Andy Montaru}\\[1cm]
 
     \begin{tabular}{rl}
-        Professeur responsable : & \todo{nom du responsable} \\
+        Professeur responsable : & Calbimonte Jean Paul \\
         Expert externe / contact psifx : & Matthew Vowels (UNIL) \\
     \end{tabular}
 

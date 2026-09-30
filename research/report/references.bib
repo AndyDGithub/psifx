@@ -1,7 +1,6 @@
 % Bibliographie du rapport de TM (v1).
 % Sources reprises des notes research/01_* a 05_*. Accents en echappements LaTeX
-% (backend bibtex). Les entrees marquees "TODO" ont des metadonnees a completer
-% (auteurs non releves dans les notes) : ne rien inventer, verifier a la source.
+% (backend bibtex). Metadonnees verifiees aupres de Crossref, NCBI et arXiv.
 
 % ---------------------------------------------------------------------------
 % psifx
@@ -29,10 +28,13 @@
 }
 
 @article{neumann1998ssm,
-  author  = {Neumann, A. and Lorenz, C.},
+  author  = {Neumann, Anke and Lorenz, Cristian},
   title   = {Statistical shape model based segmentation of medical images},
   journal = {Computerized Medical Imaging and Graphics},
   year    = {1998},
+  volume  = {22},
+  number  = {2},
+  pages   = {133--143},
   doi     = {10.1016/S0895-6111(98)00015-9},
 }
 
@@ -86,30 +88,34 @@
 }
 
 @inproceedings{li2025gcepose,
-  author    = {Li and Xu and Huang and Jung and Yu and Navab, Nassir and Busam, Benjamin},
+  author    = {Li, Weihang and Xu, Hongli and Huang, Junwen and Jung, Hyunjun and Yu, Peter K. T. and Navab, Nassir and Busam, Benjamin},
   title     = {{GCE-Pose}: Global Context Enhancement for Category-level Object Pose Estimation},
   booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
   year      = {2025},
   url       = {https://arxiv.org/pdf/2502.04293},
-  note      = {TODO : completer les prenoms des auteurs},
 }
 
 @article{shrestha2026survey,
-  author  = {Shrestha and Thakur and Wang},
+  author  = {Shrestha, Rojan and Thakur, Aroudra Syamantak and Wang, Chenxi},
   title   = {Human Pose Estimation in {2D} and {3D}: A Survey of Analytical Methods, Benchmarking Frameworks, and Engineering Applications},
-  journal = {Journal of Experimental and Theoretical Analyses (JETA)},
+  journal = {Journal of Experimental and Theoretical Analyses},
   year    = {2026},
+  volume  = {4},
+  number  = {3},
+  eid     = {28},
   doi     = {10.3390/jeta4030028},
-  note    = {TODO : completer les prenoms des auteurs et verifier le nom de la revue},
+  url     = {https://www.mdpi.com/2813-4648/4/3/28},
 }
 
 @article{fernandez2026mbrcs,
-  author  = {Fernandez and Bonnin and Fernandez-Maloigne, Christine},
+  author  = {Fernandez, Valentin and Abdiyeva, Khabiba and Brot, S{\'e}bastien and Perreira de Almeida, Luis and Gaillard, Afsaneh and Fernandez-Maloigne, Christine},
   title   = {From Pose Estimation Accuracy to Motor Biomarker Reliability: A Reliability-Centred Evaluation Framework for Markerless Movement Analysis},
   journal = {Frontiers in Neuroinformatics},
   year    = {2026},
+  volume  = {20},
+  eid     = {1790241},
   doi     = {10.3389/fninf.2026.1790241},
-  note    = {TODO : completer les prenoms des auteurs},
+  url     = {https://www.frontiersin.org/journals/neuroinformatics/articles/10.3389/fninf.2026.1790241/full},
 }
 
 % ---------------------------------------------------------------------------
@@ -208,12 +214,12 @@
 }
 
 @misc{ultralytics2026yolo26,
+  author        = {Jocher, Glenn and Qiu, Jing and Liu, Mengyu and Lyu, Shuai and Akyon, Fatih Cagatay and Kalfaoglu, Muhammet Esat},
   title         = {Ultralytics {YOLO26}: Unified Real-Time End-to-End Vision Models},
   year          = {2026},
   eprint        = {2606.03748},
   archiveprefix = {arXiv},
   url           = {https://arxiv.org/abs/2606.03748},
-  note          = {TODO : completer les auteurs},
 }
 
 @online{ultralytics_license,
@@ -232,10 +238,14 @@
 }
 
 @article{featureselection2026realtime,
+  author  = {Dong, Chengang and Ding, Yongkang and Hu, Jianwei},
   title   = {Towards Real-Time Multi-Person Pose Estimation via Feature Selection and Sharpening Mechanisms},
+  journal = {Computer Modeling in Engineering \& Sciences},
   year    = {2026},
+  volume  = {146},
+  pages   = {1--10},
+  doi     = {10.32604/cmes.2026.079062},
   url     = {https://www.sciencedirect.com/org/science/article/pii/S1526149226001062},
-  note    = {TODO : completer auteurs et revue},
 }
 
 @online{forasoft2026posestack,
@@ -270,18 +280,25 @@
 
 % Comparatifs empiriques incluant MediaPipe
 @article{circus2026mediapipe,
+  author  = {Cossin, Marion and Laforest, Alexandre},
   title   = {Evaluating {MediaPipe}, {YOLOv8}, and {VitPose} for dynamic circus motion analysis},
   journal = {Multimedia Tools and Applications},
   year    = {2026},
+  volume  = {85},
+  eid     = {52},
+  doi     = {10.1007/s11042-026-21316-4},
   url     = {https://link.springer.com/article/10.1007/s11042-026-21316-4},
-  note    = {TODO : completer les auteurs},
 }
 
 @article{gait2022comparison,
+  author  = {Washabaugh, Edward P. and Shanmugam, Thanikai Adhithiyan and Ranganathan, Rajiv and Krishnan, Chandramouli},
   title   = {Comparing the accuracy of open-source pose estimation methods for measuring gait kinematics},
   journal = {Gait \& Posture},
+  year    = {2022},
+  volume  = {97},
+  pages   = {188--195},
+  doi     = {10.1016/j.gaitpost.2022.08.008},
   url     = {https://www.sciencedirect.com/science/article/abs/pii/S0966636222004738},
-  note    = {TODO : completer auteurs, annee et verifier la revue},
 }
 
 % ---------------------------------------------------------------------------
@@ -312,24 +329,30 @@
 }
 
 @misc{mosev2,
+  author        = {Ding, Henghui and Ying, Kaining and Liu, Chang and He, Shuting and Jiang, Xudong and Jiang, Yu-Gang and Torr, Philip H. S. and Bai, Song},
   title         = {{MOSEv2}: A More Challenging Dataset for Video Object Segmentation in Complex Scenes},
   year          = {2025},
+  eprint        = {2508.05630},
+  archiveprefix = {arXiv},
   url           = {https://arxiv.org/pdf/2508.05630},
-  note          = {TODO : completer les auteurs},
 }
 
 @misc{pvuw2026tracking,
-  title  = {Advancing Complex Video Object Segmentation via Tracking-Enhanced Prompt: 1st Winner, 5th {PVUW MOSE} Challenge},
-  year   = {2026},
-  url    = {https://arxiv.org/html/2604.00395v1},
-  note   = {TODO : completer les auteurs},
+  author        = {Zhang, Jinrong and Wu, Canyang and He, Xusheng and Guan, Weili and Wu, Jianlong and Nie, Liqiang},
+  title         = {Advancing Complex Video Object Segmentation via Tracking-Enhanced Prompt: 1st Winner, 5th {PVUW MOSE} Challenge},
+  year          = {2026},
+  eprint        = {2604.00395},
+  archiveprefix = {arXiv},
+  url           = {https://arxiv.org/html/2604.00395v1},
 }
 
 @misc{pvuw2026reprompt,
-  title  = {Re-Prompting {SAM 3} via Object Retrieval: 3rd of the 5th {PVUW MOSE} Track},
-  year   = {2026},
-  url    = {https://arxiv.org/pdf/2603.23788},
-  note   = {TODO : completer les auteurs},
+  author        = {Gao, Mingqi and Li, Sijie and Han, Jungong},
+  title         = {Re-Prompting {SAM 3} via Object Retrieval: 3rd of the 5th {PVUW MOSE} Track},
+  year          = {2026},
+  eprint        = {2603.23788},
+  archiveprefix = {arXiv},
+  url           = {https://arxiv.org/pdf/2603.23788},
 }
 
 @misc{zhang2023mobilesam,
@@ -354,10 +377,13 @@
 }
 
 @misc{sampose2seg,
-  title  = {{SAM-pose2seg}: Pose-Guided Human Instance Segmentation in Crowds},
-  year   = {2026},
-  url    = {https://www.alphaxiv.org/abs/2601.08982},
-  note   = {TODO : completer les auteurs},
+  author        = {Kolomiiets, Constantin and Purkr{\'a}bek, Miroslav and Matas, Ji{\v{r}}{\'i}},
+  title         = {{SAM-pose2seg}: Pose-Guided Human Instance Segmentation in Crowds},
+  year          = {2026},
+  eprint        = {2601.08982},
+  archiveprefix = {arXiv},
+  primaryclass  = {cs.CV},
+  url           = {https://arxiv.org/abs/2601.08982},
 }
 
 @online{bboxmaskpose_repo,
@@ -368,18 +394,23 @@
 }
 
 @article{a2vis,
+  author  = {Tran, Minh and Pham, Thang and Bounsavy, Winston and Nguyen, Tri and Le, Ngan},
   title   = {{A2VIS}: Amodal-Aware Approach to Video Instance Segmentation},
   journal = {Image and Vision Computing},
   year    = {2025},
+  volume  = {159},
+  eid     = {105543},
+  doi     = {10.1016/j.imavis.2025.105543},
   url     = {https://www.sciencedirect.com/science/article/abs/pii/S0262885625001313},
-  note    = {TODO : completer les auteurs et verifier la revue},
 }
 
 @misc{diffusion_amodal,
-  title  = {Using Diffusion Priors for Video Amodal Segmentation},
-  year   = {2024},
-  url    = {https://arxiv.org/pdf/2412.04623},
-  note   = {TODO : completer les auteurs},
+  author        = {Chen, Kaihua and Ramanan, Deva and Khurana, Tarasha},
+  title         = {Using Diffusion Priors for Video Amodal Segmentation},
+  year          = {2024},
+  eprint        = {2412.04623},
+  archiveprefix = {arXiv},
+  url           = {https://arxiv.org/pdf/2412.04623},
 }
 
 % ---------------------------------------------------------------------------
@@ -387,30 +418,48 @@
 % ---------------------------------------------------------------------------
 
 @article{fbbc2025,
+  author  = {Nishimura, E.},
   title   = {Feature-based behavior coding for efficient exploratory analysis using pose estimation},
   journal = {Behavior Research Methods},
+  year    = {2025},
+  volume  = {57},
+  number  = {6},
+  eid     = {167},
+  doi     = {10.3758/s13428-025-02702-6},
   url     = {https://pmc.ncbi.nlm.nih.gov/articles/PMC12064611/},
-  note    = {TODO : completer auteurs et annee},
 }
 
 @article{markerless_review,
+  author  = {Bhola, S. and Kim, H. B. and Kim, H. S. and Gu, B. and Yoo, J. I.},
   title   = {Does advancement in marker-less pose-estimation mean more quality research? A systematic review},
+  journal = {Frontiers in Behavioral Neuroscience},
+  year    = {2025},
+  volume  = {19},
+  eid     = {1663089},
+  doi     = {10.3389/fnbeh.2025.1663089},
   url     = {https://pmc.ncbi.nlm.nih.gov/articles/PMC12411509/},
-  note    = {TODO : completer auteurs, revue et annee},
 }
 
 @article{humanvlm,
+  author  = {Dai, Dawei and Xu, Long and Li, Yutang and Zhang, Yuanhui and Xia, Shuyin},
   title   = {{HumanVLM}: Foundation for Human-Scene Vision-Language Model},
   journal = {Information Fusion},
-  url     = {https://www.sciencedirect.com/science/article/abs/pii/S1566253525003446},
-  note    = {TODO : completer auteurs, annee et verifier la revue},
+  year    = {2025},
+  volume  = {123},
+  eid     = {103271},
+  issn    = {1566-2535},
+  doi     = {10.1016/j.inffus.2025.103271},
+  url     = {https://www.sciencedirect.com/science/article/pii/S1566253525003446},
 }
 
+
 @misc{llavapose,
-  title  = {{LLaVA-Pose}: Enhancing Human Pose and Action Understanding via Keypoint-Integrated Instruction Tuning},
-  year   = {2025},
-  url    = {https://arxiv.org/pdf/2506.21317},
-  note   = {TODO : completer les auteurs},
+  author        = {Zhang, Dewen and Hussain, Tahir and An, Wangpeng and Shouno, Hayaru},
+  title         = {{LLaVA-Pose}: Enhancing Human Pose and Action Understanding via Keypoint-Integrated Instruction Tuning},
+  year          = {2025},
+  eprint        = {2506.21317},
+  archiveprefix = {arXiv},
+  url           = {https://arxiv.org/pdf/2506.21317},
 }
 
 % ---------------------------------------------------------------------------
@@ -502,17 +551,21 @@
 }
 
 @misc{vit_quant_survey,
-  title  = {Model Quantization and Hardware Acceleration for Vision Transformers: A Comprehensive Survey},
-  year   = {2024},
-  url    = {https://arxiv.org/pdf/2405.00314},
-  note   = {TODO : completer les auteurs},
+  author        = {Du, Dayou and Gong, Gu and Chu, Xiaowen},
+  title         = {Model Quantization and Hardware Acceleration for Vision Transformers: A Comprehensive Survey},
+  year          = {2024},
+  eprint        = {2405.00314},
+  archiveprefix = {arXiv},
+  url           = {https://arxiv.org/pdf/2405.00314},
 }
 
 @misc{vit_edge_survey,
-  title  = {Vision Transformers on the Edge: A Comprehensive Survey of Model Compression and Acceleration Strategies},
-  year   = {2025},
-  url    = {https://arxiv.org/pdf/2503.02891},
-  note   = {TODO : completer les auteurs},
+  author        = {Saha, Shaibal and Xu, Lanyu},
+  title         = {Vision Transformers on the Edge: A Comprehensive Survey of Model Compression and Acceleration Strategies},
+  year          = {2025},
+  eprint        = {2503.02891},
+  archiveprefix = {arXiv},
+  url           = {https://arxiv.org/pdf/2503.02891},
 }
 
 @online{nvidia_modelopt,
@@ -530,16 +583,18 @@
 }
 
 @inproceedings{li2021okdhp,
+  author    = {Li, Zheng and Ye, Jingwen and Song, Mingli and Huang, Ying and Pan, Zhigeng},
   title     = {Online Knowledge Distillation for Efficient Pose Estimation},
   booktitle = {IEEE/CVF International Conference on Computer Vision (ICCV)},
   year      = {2021},
   url       = {https://arxiv.org/pdf/2108.02092},
-  note      = {TODO : completer les auteurs},
 }
 
 @misc{uncertainty_kd_6dof,
-  title  = {Uncertainty-Aware Knowledge Distillation for Compact and Efficient {6DoF} Pose Estimation},
-  year   = {2025},
-  url    = {https://arxiv.org/pdf/2503.13053},
-  note   = {TODO : completer les auteurs},
+  author        = {Ousalah, Nassim Ali and Kacem, Anis and Ghorbel, Enjie and Koumandakis, Emmanuel and Aouada, Djamila},
+  title         = {Uncertainty-Aware Knowledge Distillation for Compact and Efficient {6DoF} Pose Estimation},
+  year          = {2025},
+  eprint        = {2503.13053},
+  archiveprefix = {arXiv},
+  url           = {https://arxiv.org/pdf/2503.13053},
 }
