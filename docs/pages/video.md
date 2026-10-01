@@ -143,6 +143,25 @@ These arguments can be used in both the above commands to configure the inferenc
 - `--smooth`: Temporally smooth the inference results to reduce the jitter, default `True`.
 - `--device`: Device on which to run the inference, either `cpu` or `cuda`, by default `cuda` if available.
 
+#### RTMO
+
+`psifx video pose rtmo` takes the same `single-inference` / `multi-inference` arguments and writes the same
+archive format, with the 17 COCO body keypoints in `pose_keypoints_2d` (no face or hands). RTMO is a one-stage
+model (no separate person detector), run through [rtmlib](https://github.com/Tau-J/rtmlib) (Apache 2.0); when
+several people are visible, the one with the largest keypoint extent is kept, so use a mask to choose who is followed.
+
+```bash
+psifx video pose rtmo single-inference \
+    --video Video.mp4 \
+    --poses Poses.tar.gz \
+    [--mask Mask.mp4] \
+    [--mode balanced]
+```
+
+- `--mode`: rtmlib preset, `lightweight` (RTMO-s), `balanced` (RTMO-m) or `performance` (RTMO-l), default `balanced`.
+
+GPU inference needs `onnxruntime-gpu`; with the CPU-only `onnxruntime` the tool says so and runs on CPU.
+
 ### Pose Visualization
 
 Creates a visual representation of detected poses in the video.

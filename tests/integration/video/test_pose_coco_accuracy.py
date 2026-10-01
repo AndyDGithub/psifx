@@ -25,6 +25,7 @@ COCO_DIR = Path(__file__).resolve().parents[1] / "data" / "CocoPose"
 # not small run-to-run noise.
 MIN_SCORES = {
     "mediapipe": ("mediapipe", 0.60, 0.90, []),  # measured: OKS 0.647, PCK 0.968
+    "rtmo": ("rtmlib", 0.89, 0.95, []),  # measured: OKS 0.943, PCK 1.000
 }
 
 

@@ -141,6 +141,7 @@ def _coco17(frame: dict) -> np.ndarray:
 ADAPTERS: Dict[str, Callable[[dict], np.ndarray]] = {
     "mediapipe": _mediapipe_to_coco17,
     "coco17": _coco17,
+    "rtmo": _coco17,
 }
 
 
