@@ -2,6 +2,7 @@
 
 import sys
 import types
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -13,6 +14,8 @@ class FakeBody:
     def __init__(self, pose, mode, backend, device):
         self.init_args = (pose, mode, backend, device)
         self.seen = []
+        provider = "CUDAExecutionProvider" if device == "cuda" else "CPUExecutionProvider"
+        self.pose_model = SimpleNamespace(session=SimpleNamespace(get_providers=lambda: [provider]))
         self.keypoints = np.stack([
             np.random.default_rng(0).uniform(0, 10, (17, 2)),   # small person
             np.random.default_rng(1).uniform(0, 100, (17, 2)),  # large person
@@ -74,3 +77,19 @@ def test_cuda_falls_back_to_cpu_without_provider(tool):
     from psifx.video.pose.rtmo.tool import RTMOPoseEstimationTool
 
     assert RTMOPoseEstimationTool(device="cuda", verbose=False).model.init_args[3] == "cpu"
+
+
+@pytest.mark.unit
+def test_int8_requires_calibration_video(tool):
+    from psifx.video.pose.rtmo.tool import RTMOPoseEstimationTool
+
+    with pytest.raises(ValueError, match="calibration_video"):
+        RTMOPoseEstimationTool(precision="int8", device="cpu", verbose=False)
+
+
+@pytest.mark.unit
+def test_fp16_rejected_on_cpu(tool):
+    from psifx.video.pose.rtmo.tool import RTMOPoseEstimationTool
+
+    with pytest.raises(ValueError, match="CUDA"):
+        RTMOPoseEstimationTool(precision="fp16", device="cpu", verbose=False)

@@ -1,6 +1,7 @@
 """RTMO pose estimation command-line interface."""
 
 import argparse
+from pathlib import Path
 from typing import Any, Dict
 
 from psifx.utils.command import Command, register_command
@@ -61,10 +62,34 @@ class RTMOModelCommand(Coco17ModelCommand):
             choices=["lightweight", "balanced", "performance"],
             help="rtmlib preset: RTMO-s, RTMO-m or RTMO-l",
         )
+        parser.add_argument(
+            "--precision",
+            type=str,
+            default="fp32",
+            choices=["fp32", "fp16", "int8"],
+            help="model precision: fp16 needs CUDA, int8 needs --calibration_video",
+        )
+        parser.add_argument(
+            "--calibration_video",
+            type=Path,
+            default=None,
+            help="video whose frames calibrate the int8 quantization (use other footage than the processed video)",
+        )
+        parser.add_argument(
+            "--calibration_frames",
+            type=int,
+            default=32,
+            help="number of frames sampled from --calibration_video",
+        )
 
     @classmethod
     def tool_kwargs(cls, args: argparse.Namespace) -> Dict[str, Any]:
-        return {"mode": args.mode}
+        return {
+            "mode": args.mode,
+            "precision": args.precision,
+            "calibration_video": args.calibration_video,
+            "calibration_frames": args.calibration_frames,
+        }
 
 
 class RTMOSingleInferenceCommand(RTMOModelCommand, Coco17SingleInferenceCommand):
