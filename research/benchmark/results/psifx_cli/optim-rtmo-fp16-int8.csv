@@ -4,3 +4,5 @@ timestamp,branch,commit,tool,extra,coco,oks,pck,detection_rate,n_images,wall_sec
 2026-10-07T11:36:41+00:00,optim/rtmo-fp16-int8,e92da4a,rtmo,--device cuda --precision fp16,benchmark,0.8255,0.88,0.92,50,8.49
 2026-10-07T11:39:19+00:00,optim/rtmo-fp16-int8,468075b,rtmo,--device cpu --precision int8 --calibration_video /home/psifx/psifx/tests/integration/data/Multi.mp4,benchmark,0.5838,0.6798,0.72,50,33.63
 2026-10-07T11:39:58+00:00,optim/rtmo-fp16-int8,468075b,rtmo,--device cuda --precision int8 --calibration_video /home/psifx/psifx/tests/integration/data/Multi.mp4,benchmark,0.5804,0.6621,0.7,50,18.63
+2026-10-07T11:47:47+00:00,optim/rtmo-fp16-int8,b029b50,rtmo,--device cpu --precision int8 --calibration_video /home/psifx/psifx/tests/integration/data/Multi.mp4,benchmark,0.5838,0.6798,0.72,50,33.62
+2026-10-07T11:48:22+00:00,optim/rtmo-fp16-int8,b029b50,rtmo,--device cuda --precision int8 --calibration_video /home/psifx/psifx/tests/integration/data/Multi.mp4,benchmark,0.5804,0.6621,0.7,50,15.74
