@@ -141,7 +141,11 @@ def _coco17(frame: dict) -> np.ndarray:
 ADAPTERS: Dict[str, Callable[[dict], np.ndarray]] = {
     "mediapipe": _mediapipe_to_coco17,
     "coco17": _coco17,
+<<<<<<< HEAD
     "rtmo": _coco17,
+=======
+    "vitpose": _coco17,
+>>>>>>> 0a5727f (Add ViTPose pose estimation tool)
 }
 
 

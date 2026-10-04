@@ -162,6 +162,27 @@ psifx video pose rtmo single-inference \
 
 GPU inference needs `onnxruntime-gpu`; with the CPU-only `onnxruntime` the tool says so and runs on CPU.
 
+#### ViTPose
+
+`psifx video pose vitpose` takes the same `single-inference` / `multi-inference` arguments and writes the same
+archive format, with the 17 COCO body keypoints in `pose_keypoints_2d` (no face or hands). ViTPose is top-down:
+people are first found with an RT-DETR detector, both models run through `transformers` (Apache 2.0). When several
+people are visible, the one with the largest box is kept, so use a mask to choose who is followed.
+
+```bash
+psifx video pose vitpose single-inference \
+    --video Video.mp4 \
+    --poses Poses.tar.gz \
+    [--mask Mask.mp4] \
+    [--model_name usyd-community/vitpose-base-simple] \
+    [--detector_name PekingU/rtdetr_r50vd_coco_o365] \
+    [--detection_threshold 0.3]
+```
+
+- `--model_name`: Hugging Face ViTPose checkpoint, default `usyd-community/vitpose-base-simple`.
+- `--detector_name`: Hugging Face RT-DETR checkpoint used to detect people, default `PekingU/rtdetr_r50vd_coco_o365`.
+- `--detection_threshold`: Minimum detector score for a person box, default `0.3`.
+
 ### Pose Visualization
 
 Creates a visual representation of detected poses in the video.
