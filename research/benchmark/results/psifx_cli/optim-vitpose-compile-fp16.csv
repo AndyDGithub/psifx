@@ -1,0 +1,4 @@
+timestamp,branch,commit,tool,extra,coco,oks,pck,detection_rate,n_images,wall_seconds
+2026-10-07T09:20:12+00:00,optim/vitpose-compile-fp16,ddccb79,vitpose,,benchmark,0.8504,0.914,0.96,50,18.87
+2026-10-07T09:22:28+00:00,optim/vitpose-compile-fp16,ddccb79,vitpose,--fp16 --compile,benchmark,0.8507,0.914,0.96,50,134.88
+2026-10-07T09:22:58+00:00,optim/vitpose-compile-fp16,ddccb79,vitpose,--fp16,benchmark,0.8503,0.914,0.96,50,19.45

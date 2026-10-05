@@ -1,0 +1,6 @@
+timestamp,branch,commit,tool,extra,coco,oks,pck,detection_rate,n_images,wall_seconds
+2026-10-07T11:51:27+00:00,optim/detrpose-compile-fp16,fddb689,detrpose,--device cpu ,benchmark,0.8395,0.9223,0.98,50,26.03
+2026-10-07T11:52:18+00:00,optim/detrpose-compile-fp16,fddb689,detrpose,--device cuda ,benchmark,0.8395,0.9223,0.98,50,12.73
+2026-10-07T11:53:12+00:00,optim/detrpose-compile-fp16,fddb689,detrpose,--device cuda --fp16,benchmark,0.8395,0.9223,0.98,50,13.18
+2026-10-07T11:55:11+00:00,optim/detrpose-compile-fp16,fddb689,detrpose,--device cuda --compile,benchmark,0.8394,0.9223,0.98,50,17.64
+2026-10-07T11:57:20+00:00,optim/detrpose-compile-fp16,fddb689,detrpose,--device cuda --fp16 --compile,benchmark,0.8395,0.9223,0.98,50,17.62

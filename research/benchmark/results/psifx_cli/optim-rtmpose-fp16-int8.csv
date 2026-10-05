@@ -1,0 +1,10 @@
+timestamp,branch,commit,tool,extra,coco,oks,pck,detection_rate,n_images,wall_seconds
+2026-10-07T11:20:29+00:00,optim/rtmpose-fp16-int8,d2d0e1e,rtmpose,--device cpu ,benchmark,0.8729,0.9348,0.98,50,20.55
+2026-10-07T11:21:36+00:00,optim/rtmpose-fp16-int8,d2d0e1e,rtmpose,--device cuda ,benchmark,0.8729,0.9348,0.98,50,8.33
+2026-10-07T11:21:59+00:00,optim/rtmpose-fp16-int8,d2d0e1e,rtmpose,--device cuda --precision fp16,benchmark,0.873,0.9348,0.98,50,10.71
+2026-10-07T11:26:16+00:00,optim/rtmpose-fp16-int8,a6a1757,rtmpose,--device cpu --precision int8 --calibration_video /home/psifx/psifx/tests/integration/data/Multi.mp4,benchmark,0.0,0.0,0.0,50,45.03
+2026-10-07T11:27:08+00:00,optim/rtmpose-fp16-int8,a6a1757,rtmpose,--device cuda --precision int8 --calibration_video /home/psifx/psifx/tests/integration/data/Multi.mp4,benchmark,0.0,0.0,0.0,50,24.59
+2026-10-07T11:31:06+00:00,optim/rtmpose-fp16-int8,16ce3f6,rtmpose,--device cpu --precision int8 --calibration_video /home/psifx/psifx/tests/integration/data/Multi.mp4,benchmark,0.6474,0.8236,0.98,50,49.56
+2026-10-07T11:31:57+00:00,optim/rtmpose-fp16-int8,16ce3f6,rtmpose,--device cuda --precision int8 --calibration_video /home/psifx/psifx/tests/integration/data/Multi.mp4,benchmark,0.6477,0.8061,0.96,50,23.47
+2026-10-07T11:44:51+00:00,optim/rtmpose-fp16-int8,9155c43,rtmpose,--device cpu --precision int8 --calibration_video /home/psifx/psifx/tests/integration/data/Multi.mp4,benchmark,0.6474,0.8236,0.98,50,49.99
+2026-10-07T11:45:41+00:00,optim/rtmpose-fp16-int8,9155c43,rtmpose,--device cuda --precision int8 --calibration_video /home/psifx/psifx/tests/integration/data/Multi.mp4,benchmark,0.6477,0.8061,0.96,50,23.26
