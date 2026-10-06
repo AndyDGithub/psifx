@@ -80,11 +80,13 @@ def test_cuda_falls_back_to_cpu_without_provider(tool):
 
 
 @pytest.mark.unit
-def test_int8_requires_calibration_video(tool):
+def test_missing_rtmlib_points_to_extra(monkeypatch):
+    # None in sys.modules makes the import fail, as when psifx[rtm] is not installed.
+    monkeypatch.setitem(sys.modules, "rtmlib", None)
     from psifx.video.pose.rtmo.tool import RTMOPoseEstimationTool
 
-    with pytest.raises(ValueError, match="calibration_video"):
-        RTMOPoseEstimationTool(precision="int8", device="cpu", verbose=False)
+    with pytest.raises(ImportError, match=r"psifx\[rtm\]"):
+        RTMOPoseEstimationTool(device="cpu", verbose=False)
 
 
 @pytest.mark.unit

@@ -154,7 +154,7 @@ et FPS. Les options d'optimisation passent par `--kwargs` (JSON, arguments du co
 
 ```bash
 python time_psifx_pose.py --tool vitpose --device cuda --kwargs '{"fp16": true, "compile": true}'
-python time_psifx_pose.py --tool rtmpose --device cpu --kwargs '{"precision": "int8", "calibration_video": "../../tests/integration/data/Multi.mp4"}'
+python time_psifx_pose.py --tool rtmo --device cuda --kwargs '{"precision": "fp16"}'
 ```
 
 RTMPose/RTMO sur GPU demandent `onnxruntime-gpu==1.20.2` et le `LD_LIBRARY_PATH` décrit en haut de ce fichier ; sans

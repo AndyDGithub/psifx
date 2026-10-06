@@ -1,3 +1,4 @@
 timestamp,branch,commit,tool,extra,coco,oks,pck,detection_rate,n_images,wall_seconds
 2026-10-07T08:58:58+00:00,dev,10bb28e,mediapipe,,tests,0.6468,0.9676,1.0,8,7.67
 2026-10-07T08:59:11+00:00,dev,10bb28e,mediapipe,,benchmark,0.283,0.4322,0.84,50,11.18
+2026-10-09T18:20:46+00:00,dev,64f25b8,rtmo,--device cuda --precision fp16,tests,0.9435,1.0,1.0,8,8.32

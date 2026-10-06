@@ -12,7 +12,7 @@ expose ``last_inference_seconds`` (model time per frame, reported separately).
 Usage:
     python time_psifx_pose.py --tool vitpose --device cuda
     python time_psifx_pose.py --tool vitpose --device cuda --kwargs '{"fp16": true, "compile": true}'
-    python time_psifx_pose.py --tool rtmpose --device cpu --kwargs '{"precision": "int8"}'
+    python time_psifx_pose.py --tool rtmo --device cuda --kwargs '{"precision": "fp16"}'
 """
 
 from __future__ import annotations
