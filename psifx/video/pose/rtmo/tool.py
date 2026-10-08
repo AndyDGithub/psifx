@@ -8,7 +8,12 @@ import cv2
 import numpy as np
 
 from psifx.video.pose.coco17.tool import Coco17PoseEstimationTool, Person, bbox_from_keypoints
-from psifx.video.pose.onnx_optimization import RTM_INSTALL_HINT, check_session_device, optimize_rtmlib_models
+from psifx.video.pose.onnx_optimization import (
+    RTM_INSTALL_HINT,
+    check_session_device,
+    optimize_rtmlib_models,
+    preload_cuda_libraries,
+)
 
 
 class RTMOPoseEstimationTool(Coco17PoseEstimationTool):
@@ -46,6 +51,8 @@ class RTMOPoseEstimationTool(Coco17PoseEstimationTool):
         if device != "cpu" and "CUDAExecutionProvider" not in onnxruntime.get_available_providers():
             print(f"onnxruntime has no CUDA provider, running RTMO on CPU instead of {device}.")
             device = "cpu"
+        if device != "cpu":
+            preload_cuda_libraries()
         # pose="rtmo" makes Body load only the RTMO model, without the YOLOX detector.
         # The ONNX weights are downloaded to ~/.cache/rtmlib on first use.
         self.model = Body(pose="rtmo", mode=mode, backend="onnxruntime", device=device)

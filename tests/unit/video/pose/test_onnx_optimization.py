@@ -13,6 +13,7 @@ from psifx.video.pose.onnx_optimization import (  # noqa: E402
     check_session_device,
     convert_fp16,
     optimize_rtmlib_models,
+    preload_cuda_libraries,
 )
 
 SHAPE = (1, 3, 8, 8)
@@ -77,3 +78,13 @@ def test_check_session_device():
     check_session_device(cpu_session, "cpu", "m")
     with pytest.raises(RuntimeError, match="onnxruntime-gpu"):
         check_session_device(cpu_session, "cuda", "m")
+
+
+@pytest.mark.unit
+def test_preload_skips_missing_nvidia_packages(monkeypatch):
+    import sys
+
+    # None in sys.modules makes the import fail, as on a machine without CUDA PyTorch wheels.
+    monkeypatch.setitem(sys.modules, "nvidia.cublas", None)
+    monkeypatch.setitem(sys.modules, "nvidia.cudnn", None)
+    assert preload_cuda_libraries() == []

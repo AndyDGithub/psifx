@@ -173,13 +173,8 @@ psifx video pose rtmo single-inference \
 - `--mode`: rtmlib preset, `lightweight` (RTMO-s), `balanced` (RTMO-m) or `performance` (RTMO-l), default `balanced`.
 - `--precision`: `fp32` or `fp16` (CUDA only, same accuracy, about 40% faster), default `fp32`.
 
-On GPU, onnxruntime also needs the cuDNN and cuBLAS libraries installed with PyTorch on its library path:
-
-```bash
-export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$(python -c 'import nvidia.cudnn as m; print(m.__path__[0])')/lib:$(python -c 'import nvidia.cublas as m; print(m.__path__[0])')/lib"
-```
-
-If onnxruntime cannot use the GPU, the tool stops with an explicit error instead of silently running on CPU.
+On GPU, the tool loads the cuDNN and cuBLAS libraries installed with PyTorch, so no `LD_LIBRARY_PATH` setup is
+needed. If onnxruntime cannot use the GPU, the tool stops with an explicit error instead of silently running on CPU.
 
 #### ViTPose
 

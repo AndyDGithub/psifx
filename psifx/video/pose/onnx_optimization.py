@@ -5,8 +5,12 @@ unchanged. INT8 quantization was evaluated and dropped: slower and much less acc
 on these models (see research/05_optimisations_synthese.md on the dev branch).
 """
 
-from typing import Dict, Union
+from typing import Dict, List, Union
 
+import ctypes
+import glob
+import importlib
+import os
 from pathlib import Path
 
 PRECISIONS = ("fp32", "fp16")
@@ -31,6 +35,39 @@ def convert_fp16(model_path: Union[str, Path], output_path: Union[str, Path]) ->
     model = convert_float_to_float16(onnx.load(str(model_path)), keep_io_types=True)
     onnx.save(model, str(output_path))
     return Path(output_path)
+
+
+def preload_cuda_libraries() -> List[str]:
+    """
+    Loads the cuDNN and cuBLAS libraries installed with PyTorch (``nvidia-cudnn-cu12``,
+    ``nvidia-cublas-cu12``) so that ``onnxruntime-gpu`` finds them without ``LD_LIBRARY_PATH``.
+
+    onnxruntime opens these libraries by name; once a library with the same name is loaded
+    in the process, the dynamic loader reuses it. Missing packages are skipped: the session
+    check (``check_session_device``) then reports the problem.
+
+    :return: The names of the loaded libraries.
+    """
+    loaded = []
+    for package in ("nvidia.cublas", "nvidia.cudnn"):
+        try:
+            lib_dir = os.path.join(importlib.import_module(package).__path__[0], "lib")
+        except ImportError:
+            continue
+        pending = sorted(glob.glob(os.path.join(lib_dir, "lib*.so*")))
+        # Some libraries depend on others of the same folder: retry until no progress.
+        while pending:
+            failed = []
+            for path in pending:
+                try:
+                    ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
+                    loaded.append(os.path.basename(path))
+                except OSError:
+                    failed.append(path)
+            if len(failed) == len(pending):
+                break
+            pending = failed
+    return loaded
 
 
 def check_session_device(session, device: str, name: str):
