@@ -1,10 +1,10 @@
-"""Unit tests for the pose benchmark metrics (research/benchmark/metrics.py)."""
+"""Unit tests for the pose benchmark metrics (tests/pose_eval/metrics.py)."""
 
 import numpy as np
 import pytest
 
-from common import COCO_KEYPOINT_NAMES, NUM_COCO_KEYPOINTS, PersonPose, empty_person_pose
-from metrics import (
+from tests.pose_eval.coco import COCO_KEYPOINT_NAMES, NUM_COCO_KEYPOINTS, PersonPose, empty_person_pose
+from tests.pose_eval.metrics import (
     match_prediction_to_gt,
     normalized_jerk_series,
     object_keypoint_similarity,

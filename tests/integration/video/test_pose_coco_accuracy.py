@@ -4,18 +4,18 @@ Accuracy regression test for psifx pose tools on a small COCO subset.
 The 8 COCO val2017 images in ``data/CocoPose`` (one large, single annotated
 person each) are letterboxed into a video and run through the real CLI
 (``psifx video pose <tool> single-inference``). The resulting archive is
-scored with COCO OKS / PCK@0.2 (see research/benchmark/psifx_eval.py).
+scored with COCO OKS / PCK@0.2 (see tests/pose_eval/psifx_eval.py).
 
 Every pose tool is evaluated the same way, so a new model can be compared
 directly to the one it replaces. To add a tool: register its COCO-17 adapter in
-``psifx_eval.ADAPTERS`` and its minimum scores in ``MIN_SCORES`` below.
+``tests.pose_eval.psifx_eval.ADAPTERS`` and its minimum scores in ``MIN_SCORES`` below.
 """
 
 from pathlib import Path
 
 import pytest
 
-from psifx_eval import build_coco_video, evaluate_archive, load_coco_samples
+from tests.pose_eval.psifx_eval import build_coco_video, evaluate_archive, load_coco_samples
 from tests.integration.conftest import run_command
 
 COCO_DIR = Path(__file__).resolve().parents[1] / "data" / "CocoPose"

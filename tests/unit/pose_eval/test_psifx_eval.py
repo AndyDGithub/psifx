@@ -1,4 +1,4 @@
-"""Unit tests for the psifx archive -> COCO evaluation helpers (research/benchmark/psifx_eval.py)."""
+"""Unit tests for the psifx archive -> COCO evaluation helpers (tests/pose_eval/psifx_eval.py)."""
 
 import json
 from pathlib import Path
@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from common import COCO_KEYPOINT_NAMES, MEDIAPIPE_TO_COCO17, NUM_COCO_KEYPOINTS
-from psifx_eval import ADAPTERS, GroundTruth, evaluate_archive, letterbox, load_coco_samples, read_archive
+from tests.pose_eval.coco import COCO_KEYPOINT_NAMES, MEDIAPIPE_TO_COCO17, NUM_COCO_KEYPOINTS
+from tests.pose_eval.psifx_eval import ADAPTERS, GroundTruth, evaluate_archive, letterbox, load_coco_samples, read_archive
 from psifx.io.tar import TarWriter
 
 COCO_DIR = Path(__file__).resolve().parents[2] / "integration" / "data" / "CocoPose"
