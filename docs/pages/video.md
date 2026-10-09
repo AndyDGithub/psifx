@@ -143,6 +143,62 @@ These arguments can be used in both the above commands to configure the inferenc
 - `--smooth`: Temporally smooth the inference results to reduce the jitter, default `True`.
 - `--device`: Device on which to run the inference, either `cpu` or `cuda`, by default `cuda` if available.
 
+#### RTMO
+
+`psifx video pose rtmo` takes the same `single-inference` / `multi-inference` arguments and writes the same
+archive format, with the 17 COCO body keypoints in `pose_keypoints_2d` (no face or hands). RTMO is a one-stage
+model (no separate person detector), run through [rtmlib](https://github.com/Tau-J/rtmlib) (Apache 2.0); when
+several people are visible, the one with the largest keypoint extent is kept, so use a mask to choose who is followed.
+On a COCO subset it is far more accurate than MediaPipe (OKS 0.83 vs 0.28) and runs at about 77 frames/s on an
+RTX 4060 laptop GPU (110 frames/s with `--precision fp16`).
+
+Its dependencies are optional:
+
+```bash
+pip install 'psifx[rtm]'        # CPU
+pip install 'psifx[rtm-gpu]'    # GPU (CUDA 12)
+# rtmlib pulls the CPU-only onnxruntime, which overwrites onnxruntime-gpu: keep only the GPU build.
+pip uninstall -y onnxruntime && pip install --force-reinstall --no-deps onnxruntime-gpu==1.20.2
+```
+
+```bash
+psifx video pose rtmo single-inference \
+    --video Video.mp4 \
+    --poses Poses.tar.gz \
+    [--mask Mask.mp4] \
+    [--mode balanced] \
+    [--precision fp32]
+```
+
+- `--mode`: rtmlib preset, `lightweight` (RTMO-s), `balanced` (RTMO-m) or `performance` (RTMO-l), default `balanced`.
+- `--precision`: `fp32` or `fp16` (CUDA only, same accuracy, about 40% faster), default `fp32`.
+
+On GPU, the tool loads the cuDNN and cuBLAS libraries installed with PyTorch, so no `LD_LIBRARY_PATH` setup is
+needed. If onnxruntime cannot use the GPU, the tool stops with an explicit error instead of silently running on CPU.
+
+#### ViTPose
+
+`psifx video pose vitpose` takes the same `single-inference` / `multi-inference` arguments and writes the same
+archive format, with the 17 COCO body keypoints in `pose_keypoints_2d` (no face or hands). ViTPose is top-down:
+people are first found with an RT-DETR detector, both models run through `transformers` (Apache 2.0). When several
+people are visible, the one with the largest box is kept, so use a mask to choose who is followed.
+It is the most accurate of the pose tools on a COCO subset (OKS 0.85 with a real detector, vs 0.28 for MediaPipe),
+at about 18 frames/s on an RTX 4060 laptop GPU. It needs no extra dependency.
+
+```bash
+psifx video pose vitpose single-inference \
+    --video Video.mp4 \
+    --poses Poses.tar.gz \
+    [--mask Mask.mp4] \
+    [--model_name usyd-community/vitpose-base-simple] \
+    [--detector_name PekingU/rtdetr_r50vd_coco_o365] \
+    [--detection_threshold 0.3]
+```
+
+- `--model_name`: Hugging Face ViTPose checkpoint, default `usyd-community/vitpose-base-simple`.
+- `--detector_name`: Hugging Face RT-DETR checkpoint used to detect people, default `PekingU/rtdetr_r50vd_coco_o365`.
+- `--detection_threshold`: Minimum detector score for a person box, default `0.3`.
+
 ### Pose Visualization
 
 Creates a visual representation of detected poses in the video.

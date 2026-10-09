@@ -1,0 +1,1 @@
+"""ViTPose pose estimation module."""
