@@ -1,3 +1,5 @@
 include requirements.txt
 include requirements-dev.txt
 include docs/requirements.txt
+include requirements-rtm.txt
+include requirements-rtm-gpu.txt
