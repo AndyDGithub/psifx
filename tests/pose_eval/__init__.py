@@ -1,1 +1,1 @@
-"""COCO pose evaluation helpers shared by the tests (and the research benchmark on dev)."""
+"""COCO pose evaluation helpers used by the pose tests."""

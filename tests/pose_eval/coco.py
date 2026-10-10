@@ -1,7 +1,7 @@
 """COCO-17 keypoint definitions and the person pose type used by the pose evaluation.
 
-Shared by the psifx tests and by the research benchmark (research/benchmark on the
-dev branch), so both score poses with exactly the same definitions.
+Shared by the pose tests and by the benchmark used to select the pose models, so both
+score poses with exactly the same definitions.
 """
 
 from __future__ import annotations

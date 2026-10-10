@@ -9,8 +9,8 @@ the COCO ground truth with the same OKS/PCK as ``metrics.py``. Every model
 branch that adds a psifx pose tool is therefore measured on exactly the same
 input and output format as MediaPipe, the model it is meant to replace.
 
-Used by ``tests/integration/video/test_pose_coco_accuracy.py`` and by the
-research benchmark's ``run_psifx_cli_benchmark.py`` (dev branch).
+Used by ``tests/integration/video/test_pose_coco_accuracy.py`` (and by the benchmark
+used to select the pose models).
 """
 
 from __future__ import annotations

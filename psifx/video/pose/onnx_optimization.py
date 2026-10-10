@@ -1,8 +1,8 @@
 """Inference helpers for ONNX pose models run with rtmlib (fp16 conversion, device checks).
 
 float16 conversion keeps float32 inputs/outputs, so rtmlib's pre/post-processing is
-unchanged. INT8 quantization was evaluated and dropped: slower and much less accurate
-on these models (see research/05_optimisations_synthese.md on the dev branch).
+unchanged. INT8 quantization was evaluated and dropped: on these models it was both slower
+(on CPU and GPU) and much less accurate (about -0.24 COCO OKS).
 """
 
 from typing import Dict, List, Union
