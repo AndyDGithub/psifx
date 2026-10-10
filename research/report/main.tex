@@ -706,14 +706,57 @@ sur le front de Pareto. Le choix se resserre à deux candidats :
     \item \textbf{RTMO} pour le compromis précision/vitesse/simplicité : un seul modèle, pas de détecteur à
     maintenir, premier du classement pondéré, et le seul à profiter pleinement du fp16.
 \end{itemize}
-Tous deux sont sous Apache 2.0. Ce choix relève d'une décision produit (traitement différé où la précision prime,
-ou pipeline proche du temps réel) à prendre avec le responsable et Matthew Vowels.
+Tous deux sont sous Apache 2.0. Plutôt que de trancher entre traitement différé (précision) et pipeline proche du
+temps réel (vitesse), les deux ont été intégrés : l'utilisateur choisit selon son étude
+(section~\ref{sec:decisions}).
 
 \paragraph{Q5 -- Optimisations.} Le fp16 est un gain gratuit sur GPU pour les modèles ONNX (+11\,\% RTMPose,
 +43\,\% RTMO), sans aucune perte de précision. \code{torch.compile} combiné au fp16 double la vitesse du modèle
 DETRPose et gagne 10\,\% sur ViTPose, mais coûte de 8\,s à 2\,min de compilation à chaque appel de la commande, et
 son effet est masqué par les étapes hors modèle. L'INT8 statique est à écarter sur ce matériel : plus lent sur CPU
 comme sur GPU, et 23 à 24 points d'OKS en moins.
+
+\section{Décisions d'intégration}
+\label{sec:decisions}
+
+Sur la base de ces résultats, les choix suivants ont été faits pour la branche principale de psifx
+(tableau~\ref{tab:decisions}) :
+\begin{itemize}
+    \item \textbf{RTMO}, avec l'option \code{--precision fp16}, et \textbf{ViTPose} rejoignent la bibliothèque. RTMO
+    offre le meilleur compromis et le seul gain fp16 notable ; ViTPose est le plus précis des modèles retenus et
+    n'ajoute aucune dépendance.
+    \item \textbf{RTMPose} et \textbf{DETRPose} restent dans leurs branches : RTMPose fait en grande partie doublon
+    avec RTMO (même dépendance) et ViTPose ; DETRPose demande un environnement séparé et souffre d'un pont lent.
+    \item L'\textbf{INT8} et les options fp16 et \code{torch.compile} de ViTPose sont retirés : défavorables ou
+    marginaux pour un coût réel.
+    \item \code{rtmlib} devient une dépendance optionnelle (\code{psifx[rtm]}, \code{psifx[rtm-gpu]}) : l'installation
+    de base de psifx est inchangée. Les paquets \code{onnxruntime} et \code{onnxruntime-gpu} s'installent dans le
+    même dossier et s'écrasent mutuellement ; la documentation indique comment ne garder que la version GPU, et
+    l'outil charge lui-même cuDNN et cuBLAS installés avec PyTorch.
+    \item Le matériel de recherche (notes, banc de mesure, rapport) reste hors de la bibliothèque ; le code
+    d'évaluation COCO utilisé par les tests a été déplacé dans \code{tests/pose_eval/}.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Récapitulatif des modèles et optimisations, et décision pour la bibliothèque (50 images COCO, GPU sauf
+mention ; temps en régime établi ; DETRPose : modèle seul).}
+\label{tab:decisions}
+\footnotesize
+\begin{tabular}{@{}llrccl@{}}
+\toprule
+Modèle & Configuration & ms/image & OKS & Détection & Décision \\
+\midrule
+MediaPipe & -- (CPU) & -- & 0,283 & 84\,\% & conservé (visage, mains) \\
+\textbf{RTMO} & fp32 / \textbf{fp16} & 13,0 / \textbf{9,1} & 0,826 & 92\,\% & \textbf{bibliothèque} \\
+\textbf{ViTPose} & fp32 & 55,1 & 0,850 & 96\,\% & \textbf{bibliothèque} \\
+RTMPose & fp32 / fp16 & 24,6 / 22,1 & 0,873 & 98\,\% & branche \\
+DETRPose & fp32 / fp16 + compile & 23,9 / 11,9 & 0,840 & 98\,\% & branche \\
+Tous ONNX & int8 & plus lent & 0,58--0,65 & 70--98\,\% & retiré \\
+ViTPose & fp16 + compile & 50,0 & 0,851 & 96\,\% & retiré \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \section{Pourquoi l'INT8 échoue ici}
 
@@ -804,21 +847,24 @@ Modèle & Piste & Priorité \\
 Distillation, élagage et quantification avec ré-entraînement restent hors de portée à court terme
 (section~\ref{sec:sota-optim}).
 
-\section{Au-delà de l'optimisation}
+\section{Axes d'amélioration retenus}
 
-\begin{itemize}
-    \item Choisir avec le responsable et Matthew Vowels entre ViTPose et RTMO, puis merger les branches retenues dans
-    \code{dev}, avec un tableau récapitulatif, et enfin dans \code{main}.
-    \item Remesurer DETRPose dans le banc de recherche avec une synchronisation CUDA, et toutes les vitesses sur un GPU
-    non partagé.
-    \item Évaluer l'occlusion mutuelle (CrowdPose, ou occlusion volontaire sur \code{Video.mp4}) et envisager DEKR
-    si le besoin se confirme \cite{geng2021dekr}.
-    \item Surveiller l'arrivée de SAM~3.1 dans \code{transformers} ; d'ici là, tester un re-prompting autour de SAM3
+Trois axes ont été retenus pour la phase suivante :
+\begin{enumerate}
+    \item \textbf{Corps entier} : RTMW \cite{jiang2024rtmw}, de la même famille et avec la même dépendance que RTMO,
+    pour retrouver le visage et les mains que les modèles COCO-17 ne fournissent pas, contrairement à MediaPipe
+    Holistic.
+    \item \textbf{Multi-personnes natif} : produire une archive par personne détectée, avec un suivi d'identité entre
+    images, sans exiger les masques SAM3.
+    \item \textbf{Occlusion et SAM~3.1} : évaluer la robustesse à l'occlusion mutuelle (CrowdPose, ou occlusion
+    volontaire sur \code{Video.mp4}) et envisager DEKR si le besoin se confirme \cite{geng2021dekr} ; passer à
+    SAM~3.1 dès son support dans \code{transformers}, en testant d'ici là un re-prompting autour de SAM3
     \cite{pvuw2026reprompt}.
-    \item Corps entier : RTMW \cite{jiang2024rtmw} pour retrouver les mains et le visage, que les modèles COCO-17 ne
-    fournissent pas, contrairement à MediaPipe Holistic.
-    \item Faire valider la licence de Sapiens2 avant tout nouvel investissement.
-\end{itemize}
+\end{enumerate}
+
+Restent en réserve : les optimisations de vitesse vidéo du tableau~\ref{tab:futur}, une nouvelle mesure de DETRPose
+avec synchronisation CUDA et de toutes les vitesses sur un GPU non partagé, et la validation de la licence de
+Sapiens2 avant tout nouvel investissement.
 
 % =============================================================================
 \chapter{Conclusion}
@@ -833,8 +879,8 @@ vitesse/simplicité, en particulier en fp16 (110 images/s sans perte de précisi
 
 Les mesures d'optimisation rappellent qu'un gain annoncé sur un modèle ne se traduit pas forcément de bout en
 bout : il faut profiler la chaîne complète avant d'optimiser, et vérifier la précision après chaque optimisation.
-La prochaine étape est le choix du modèle cible avec le responsable et Matthew Vowels, suivi des merges et des
-optimisations prioritaires identifiées au chapitre~\ref{chap:futur}.
+RTMO et ViTPose ont été retenus pour la bibliothèque (section~\ref{sec:decisions}) ; la phase suivante porte sur le
+corps entier, le multi-personnes natif et l'occlusion (chapitre~\ref{chap:futur}).
 
 % =============================================================================
 \appendix
