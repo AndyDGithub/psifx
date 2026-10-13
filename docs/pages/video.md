@@ -143,6 +143,25 @@ These arguments can be used in both the above commands to configure the inferenc
 - `--smooth`: Temporally smooth the inference results to reduce the jitter, default `True`.
 - `--device`: Device on which to run the inference, either `cpu` or `cuda`, by default `cuda` if available.
 
+#### Body pose: RTMO or ViTPose
+
+`psifx video pose body` estimates the 17 COCO body keypoints with a choice of model, RTMO by default. It takes the
+same `single-inference` / `multi-inference` arguments as MediaPipe and writes the same archive format; each model
+is described in its own section below, with its options.
+
+```bash
+psifx video pose body single-inference \
+    --video Video.mp4 \
+    --poses Poses.tar.gz \
+    [--mask Mask.mp4] \
+    [--model rtmo]
+```
+
+- `--model`: `rtmo` (default; fast, needs `pip install 'psifx[rtm]'`) or `vitpose` (most accurate, no extra
+  dependency).
+- RTMO options: `--mode`, `--precision`; ViTPose options: `--model_name`, `--detector_name`,
+  `--detection_threshold` (see below).
+
 #### RTMO
 
 `psifx video pose rtmo` takes the same `single-inference` / `multi-inference` arguments and writes the same

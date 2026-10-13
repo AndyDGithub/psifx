@@ -43,7 +43,7 @@ pytest tests/integration/io/
 `tests/integration/video/test_pose_coco_accuracy.py` runs each pose tool through the real CLI on 8 COCO images
 (`tests/integration/data/CocoPose`) and checks its OKS / PCK@0.2 against a minimum score. This is the common
 yardstick for the model and optimization branches: a new tool registers its COCO-17 adapter in
-`tests/pose_eval/psifx_eval.py` and its minimum scores in `MIN_SCORES`.
+`tests/pose_eval/psifx_eval.py` and its minimum scores in `CASES`.
 
 ```bash
 pytest tests/integration/video/test_pose_coco_accuracy.py -s   # -s prints the measured scores
