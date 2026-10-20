@@ -7,7 +7,8 @@ less-known dataset: needs ``OCHUMAN_ROOT`` (see tests/pose_eval/ochuman.py) and 
 
     OCHUMAN_ROOT=/path/to/ochuman pytest -m dataset -s
 
-Set ``OCHUMAN_LIMIT`` to evaluate only the first N images during development.
+Set ``OCHUMAN_LIMIT`` to evaluate only the first N images during development (scores are printed,
+the thresholds are not checked).
 """
 
 import os
@@ -17,10 +18,13 @@ import torch
 
 from tests.pose_eval.ochuman import ENV_VAR, evaluate_tool, find_split
 
-# model -> (required module, minimum COCO keypoint AP on the OCHuman test split).
+# model -> (required module, minimum COCO keypoint AP on the OCHuman test split), about 3 points
+# under the AP measured on 2026-10-20 (2231 images, RTX 4060): RTMO-m 0.289, ViTPose-B 0.343.
+# Low AP is expected: OCHuman does not annotate every person, so correct detections of unlabeled
+# people count as false positives, and occluded people are often missed by the detectors.
 MIN_AP = {
-    "rtmo": ("rtmlib", 0.0),  # TODO: set a few points under the measured AP once OCHuman is available
-    "vitpose": ("transformers", 0.0),
+    "rtmo": ("rtmlib", 0.26),
+    "vitpose": ("transformers", 0.31),
 }
 
 
@@ -48,4 +52,7 @@ def test_pose_tool_ochuman_ap(model):
 
     scores = evaluate_tool(make_tool(model).predict, images, annotations, limit=limit)
     print(f"\n[{model}] OCHuman test {scores}")
+    if limit is not None:
+        # The thresholds hold for the whole split; a few images can score far lower or higher.
+        pytest.skip(f"OCHUMAN_LIMIT={limit}: AP printed, thresholds only checked on the whole split")
     assert scores["AP"] >= min_ap, f"{model} AP {scores['AP']:.3f} < {min_ap}"
