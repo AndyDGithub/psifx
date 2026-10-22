@@ -48,17 +48,20 @@ COCO_EDGES = ((15, 13), (13, 11), (16, 14), (14, 12), (11, 12), (5, 11), (6, 12)
 def load_archive(path: Path, n_frames: int) -> Dict[str, np.ndarray]:
     """Pose archive as {part: [n_frames, K, C] array}, NaN where the part was not detected."""
     poses, _ = PoseEstimationTool(device="cpu", verbose=False).decode(path)
-    first = next(iter(poses.values()))
-    channels = {key: 4 if key.endswith("_3d") else 3 for key in first}
-    parts = {key: np.full((n_frames, len(v) // channels[key], channels[key]), np.nan, dtype=np.float32)
-             for key, v in first.items()}
+    channels, sizes = {}, {}
+    for pose in poses.values():
+        for key, value in pose.items():
+            channels[key] = 4 if key.endswith("_3d") else 3
+            # MediaPipe writes 468 zeros for a missing face but 478 points (with irises) for a found one.
+            sizes[key] = max(sizes.get(key, 0), len(value) // channels[key])
+    parts = {key: np.full((n_frames, sizes[key], channels[key]), np.nan, dtype=np.float32) for key in sizes}
     for i, pose in poses.items():
         if i >= n_frames:
             continue
         for key, value in pose.items():
             arr = np.asarray(value, dtype=np.float32).reshape(-1, channels[key])
             if arr.any():
-                parts[key][i] = arr
+                parts[key][i, :len(arr)] = arr
     return parts
 
 

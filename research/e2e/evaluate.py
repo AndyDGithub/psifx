@@ -5,7 +5,9 @@
   jerk (temporal stability, see tests/pose_eval/metrics.py).
 - Audio: number of diarized speakers, speech time, number of subtitle segments and how many reach a
   visible person. With a ``reference.txt`` (song lyrics, manual transcript) also the WER.
-- Voice to person linking: with per-person microphones (``identification_mics.json``), the share of
+- Voice to person linking: with AVA-ActiveSpeaker labels (``ava_active_speaker.csv``: speaking face
+  boxes per instant), the share of speaking instants where the predicted speaker's head is in a
+  speaking box. With per-person microphones (``identification_mics.json``), the share of
   speech time where the lip-based link agrees with the microphones. The microphone to person
   correspondence is the best one-to-one match, to check once by eye on the rendered video.
 - Cost: time per stage and real-time factor (compute time / video duration).
@@ -97,6 +99,65 @@ def link_accuracy(segments, lips: dict, mics: dict) -> dict:
     }
 
 
+def head_positions(d: Path, n_frames: int, width: int, height: int) -> dict:
+    """Normalized head position per person and frame (MediaPipe face center, else RTMO nose), NaN if unseen."""
+    heads = {}
+    mp, body = load_people(d / "poses_mp", n_frames), load_people(d / "poses_body", n_frames)
+    for person in set(mp) | set(body):
+        pos = np.full((n_frames, 2), np.nan)
+        if person in body:
+            nose = body[person]["pose_keypoints_2d"][:, 0]
+            ok = np.nan_to_num(nose[:, 2]) >= 0.3
+            pos[ok] = nose[ok, :2]
+        if person in mp:
+            face = mp[person]["face_keypoints_2d"][..., :2]
+            ok = ~np.isnan(face).all(axis=(1, 2))
+            pos[ok] = np.nanmean(face[ok], axis=1)
+        heads[person] = pos / [width, height]
+    return heads
+
+
+def active_speaker_accuracy(d: Path, segments, mapping: dict, n_frames: int, fps: float) -> dict:
+    """AVA-ActiveSpeaker check: at each labeled instant where a face speaks audibly, is the person that
+    diarization + lip linking says is speaking inside one of the speaking face boxes?"""
+    import pandas as pd
+
+    labels = pd.read_csv(d / "ava_active_speaker.csv")
+    with video.VideoReader(path=d / "input.mp4") as reader:
+        height, width = next(iter(reader)).shape[:2]
+    heads = head_positions(d, n_frames, width, height)
+    margin = 0.02
+    correct = answered = total = 0
+    chance = []
+    for t, faces in labels.groupby("t"):
+        speaking = faces[faces["label"] == "SPEAKING_AUDIBLE"]
+        if speaking.empty:
+            continue
+        total += 1
+        chance.append(len(speaking) / len(faces))
+        frame = min(n_frames - 1, int(round(t * fps)))
+        talkers = {mapping.get(s["speaker_name"]) for s in segments
+                   if s["start"] <= t < s["start"] + s["duration"]}
+        people = [p.removeprefix("person_") for p in talkers if p and p.startswith("person_")]
+        if not people:
+            continue
+        answered += 1
+        hit = False
+        for person in people:
+            x, y = heads.get(person, np.full((n_frames, 2), np.nan))[frame]
+            inside = ((speaking["x1"] - margin <= x) & (x <= speaking["x2"] + margin)
+                      & (speaking["y1"] - margin <= y) & (y <= speaking["y2"] + margin))
+            hit |= bool(inside.any())
+        correct += hit
+    return {
+        "labeled_speaking_instants": total,
+        "answered": round(answered / total, 3) if total else None,
+        "accuracy": round(correct / total, 3) if total else None,
+        "accuracy_when_answered": round(correct / answered, 3) if answered else None,
+        "chance": round(float(np.mean(chance)), 3) if chance else None,
+    }
+
+
 def contact_sheet(render: Path, out: Path, n: int = 8):
     cap = cv2.VideoCapture(str(render))
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -151,6 +212,8 @@ def main():
             lips = json.loads(lips_path.read_text())
             audio["lips_mapping"] = lips["mapping"]
             audio["lips_agreement"] = round(lips["agreement"], 3)
+            if (d / "ava_active_speaker.csv").exists():
+                audio["active_speaker_vs_ava"] = active_speaker_accuracy(d, segments, lips["mapping"], n_frames, fps)
             if mics_path.exists():
                 audio["link_vs_mics"] = link_accuracy(segments, lips["mapping"],
                                                       json.loads(mics_path.read_text())["mapping"])

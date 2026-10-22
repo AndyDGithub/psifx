@@ -65,8 +65,17 @@ def build_stages(d: Path, args: argparse.Namespace) -> List[Stage]:
             "--poses_dir", str(poses_mp))),
         Stage("audio_extraction", [audio_raw], psifx(
             "audio", "manipulation", "extraction", "--video", video, "--audio", str(audio_raw))),
+    ]
+    speech = audio_raw
+    if args.separate_vocals:
+        # Music hides the voice from WhisperX's voice activity detection: keep only the vocals (Demucs).
+        speech = d / "separated" / "htdemucs" / "audio_raw" / "vocals.wav"
+        stages.append(Stage("vocals_separation", [speech], [
+            sys.executable, "-m", "demucs", "--two-stems", "vocals", "-n", "htdemucs", "-o", str(d / "separated"),
+            str(audio_raw)]))
+    stages += [
         Stage("audio_mono", [d / "audio_mono.wav"], psifx(
-            "audio", "manipulation", "conversion", "--audio", str(audio_raw), "--mono_audio", str(d / "audio_mono.wav"))),
+            "audio", "manipulation", "conversion", "--audio", str(speech), "--mono_audio", str(d / "audio_mono.wav"))),
         Stage("audio_normalization", [audio], psifx(
             "audio", "manipulation", "normalization", "--audio", str(d / "audio_mono.wav"), "--normalized_audio", str(audio))),
         Stage("diarization", [d / "diarization.rttm"], psifx(
@@ -110,6 +119,8 @@ def main():
     parser.add_argument("--num_speakers", type=int, default=None, help="known number of speakers, if any")
     parser.add_argument("--stereo_mics", action="store_true", help="one lavalier mic per person on L/R channels")
     parser.add_argument("--vitpose", action="store_true", help="also run ViTPose, for comparison")
+    parser.add_argument("--separate_vocals", action="store_true",
+                        help="diarize and transcribe the vocals only (Demucs), for music videos")
     parser.add_argument("--text_prompt", default="person")
     parser.add_argument("--chunk_size", type=int, default=300)
     parser.add_argument("--max_objects", type=int, default=None)
