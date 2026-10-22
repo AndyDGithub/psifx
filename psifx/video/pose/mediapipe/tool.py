@@ -68,6 +68,24 @@ class MediaPipePoseEstimationTool(PoseEstimationTool):
             points = np.zeros((n_points, 3), dtype=np.float32)
         return points.flatten().tolist()
 
+    def process_world(
+        self,
+        landmarks,
+        n_points: int,
+    ) -> List[float]:
+        """
+        Processes MediaPipe world landmarks into a flattened list of 3D coordinates.
+
+        :param landmarks: MediaPipe world landmarks, in meters with the origin between the hips.
+        :param n_points: Expected number of points.
+        :return: Flattened ``[x, y, z, visibility]`` per point, zeros if nobody was detected.
+        """
+        if landmarks is not None:
+            points = np.array([[p.x, p.y, p.z, p.visibility] for p in landmarks.landmark], dtype=np.float32)
+        else:
+            points = np.zeros((n_points, 4), dtype=np.float32)
+        return points.flatten().tolist()
+
     def process_pose(
         self,
         results,
@@ -101,6 +119,11 @@ class MediaPipePoseEstimationTool(PoseEstimationTool):
                 size=size,
                 n_points=skeleton.N_LEFT_HAND_LANDMARKS,
             ),
+            # Older MediaPipe results (and test doubles) may not carry world landmarks.
+            "pose_keypoints_3d": self.process_world(
+                landmarks=getattr(results, "pose_world_landmarks", None),
+                n_points=skeleton.N_POSE_LANDMARKS,
+            ),
         }
 
     def inference(
@@ -130,6 +153,7 @@ class MediaPipePoseEstimationTool(PoseEstimationTool):
                 "face_keypoints_2d": skeleton.FACE_EDGES,
                 "hand_left_keypoints_2d": skeleton.LEFT_HAND_EDGES,
                 "hand_right_keypoints_2d": skeleton.RIGHT_HAND_EDGES,
+                "pose_keypoints_3d": skeleton.POSE_EDGES,
             }
         }
 

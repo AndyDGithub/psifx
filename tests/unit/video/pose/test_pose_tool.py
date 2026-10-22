@@ -95,5 +95,14 @@ def test_mediapipe_process_pose_has_all_parts(mediapipe_tool):
 
     results = SimpleNamespace(pose_landmarks=None, face_landmarks=None, left_hand_landmarks=None, right_hand_landmarks=None)
     pose = mediapipe_tool.process_pose(results, size=(10, 10))
-    assert set(pose) == {"pose_keypoints_2d", "face_keypoints_2d", "hand_left_keypoints_2d", "hand_right_keypoints_2d"}
+    assert set(pose) == {
+        "pose_keypoints_2d", "face_keypoints_2d", "hand_left_keypoints_2d", "hand_right_keypoints_2d", "pose_keypoints_3d"
+    }
     assert len(pose["pose_keypoints_2d"]) == skeleton.N_POSE_LANDMARKS * 3
+    assert pose["pose_keypoints_3d"] == [0.0] * (skeleton.N_POSE_LANDMARKS * 4)
+
+
+@pytest.mark.unit
+def test_mediapipe_process_world_keeps_meters(mediapipe_tool):
+    world = SimpleNamespace(landmark=[SimpleNamespace(x=0.1, y=-0.5, z=0.2, visibility=0.9)])
+    np.testing.assert_allclose(mediapipe_tool.process_world(world, n_points=1), [0.1, -0.5, 0.2, 0.9], rtol=1e-6)
