@@ -9,7 +9,9 @@
   boxes per instant), the share of speaking instants where the predicted speaker's head is in a
   speaking box. With per-person microphones (``identification_mics.json``), the share of
   speech time where the lip-based link agrees with the microphones. The microphone to person
-  correspondence is the best one-to-one match, to check once by eye on the rendered video.
+  correspondence is the best one-to-one match, to check once by eye on the rendered video. With
+  ``reference_speakers.txt`` (``<segment index> <person>`` per line, for the subtitle segments whose
+  speaker is certain from the text alone), the share of their time given to the right person.
 - Cost: time per stage and real-time factor (compute time / video duration).
 
 Writes ``metrics.json`` and ``contact_sheet.jpg`` (8 frames of the rendered video).
@@ -158,6 +160,25 @@ def active_speaker_accuracy(d: Path, segments, mapping: dict, n_frames: int, fps
     }
 
 
+def text_label_accuracy(subs, labels_path: Path) -> dict:
+    """Share of the labeled subtitle segments' time whose speaker matches the label."""
+    labels = {}
+    for line in labels_path.read_text().splitlines():
+        if line.strip() and not line.startswith("#"):
+            index, person = line.split()
+            labels[int(index)] = person
+    if max(labels) >= len(subs):
+        # The labels refer to another transcription run: refuse rather than score the wrong segments.
+        raise ValueError(f"{labels_path} labels segment {max(labels)}, the transcription has {len(subs)}")
+    duration = {i: subs[i]["end"] - subs[i]["start"] for i in labels}
+    correct = [i for i, person in labels.items() if subs[i]["speaker"] == person]
+    return {
+        "segments": len(labels),
+        "correct_segments": len(correct),
+        "time_accuracy": round(sum(duration[i] for i in correct) / sum(duration.values()), 3),
+    }
+
+
 def contact_sheet(render: Path, out: Path, n: int = 8):
     cap = cv2.VideoCapture(str(render))
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -223,6 +244,8 @@ def main():
         on_person = sum(s["end"] - s["start"] for s in subs if (s["speaker"] or "").startswith("person_"))
         audio["subtitle_segments"] = len(subs)
         audio["subtitle_time_on_visible_person"] = round(on_person / seconds, 3) if seconds else None
+        if (d / "reference_speakers.txt").exists():
+            audio["attribution_vs_text_labels"] = text_label_accuracy(subs, d / "reference_speakers.txt")
         if (d / "reference.txt").exists():
             import jiwer
 

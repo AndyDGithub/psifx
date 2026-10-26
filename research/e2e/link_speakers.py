@@ -8,7 +8,10 @@ Here the link comes from the video: a person's mouth moves while their voice is 
 2. Lip activity: standard deviation of the opening over a sliding window of about 0.5 s. Talking
    makes the opening vary, a still or a constantly open mouth does not.
 3. Score of (speaker, person): z-scored activity of the person while the speaker talks, minus while
-   they do not.
+   they do not. Plus a visibility term: in edited videos the director mostly shows who is talking, so
+   the share of the speaker's time where the person's face is on screen, minus the same share while
+   the other speakers talk. It is close to 0 for a fixed camera where everyone stays visible, and it
+   carries the link when the lips are hard to read (beard, microphone in front of the mouth).
 4. Assignment: one person per speaker (Hungarian algorithm) when the score is convincing, then
    left-over speakers (diarization often splits one voice in two) go to their best person, else
    "offscreen" (voice-over, music, someone not visible).
@@ -72,24 +75,31 @@ def speaking_frames(segments, speaker: str, n_frames: int, fps: float) -> np.nda
 
 
 def score_matrix(activity: Dict[str, np.ndarray], segments, n_frames: int, fps: float,
-                 min_coverage: float) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Scores (speakers x people), and the share of each speaker's time where the person's lips are seen."""
+                 min_coverage: float, visibility_weight: float) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Scores (speakers x people), the share of each speaker's time where the person's lips are seen,
+    and the visibility term included in the scores."""
     speakers = sorted({seg["speaker_name"] for seg in segments})
     scores = pd.DataFrame(np.nan, index=speakers, columns=sorted(activity, key=int))
-    coverage = scores.copy()
+    coverage, visibility = scores.copy(), scores.copy()
+    talking = {speaker: speaking_frames(segments, speaker, n_frames, fps) for speaker in speakers}
     for person, act in activity.items():
         valid = ~np.isnan(act)
         if valid.sum() < 2:
             continue
         z = (act - np.nanmean(act)) / (np.nanstd(act) + 1e-9)
         for speaker in speakers:
-            talking = speaking_frames(segments, speaker, n_frames, fps)
-            seen = talking & valid
-            coverage.loc[speaker, person] = seen.sum() / max(1, talking.sum())
-            others = ~talking & valid
+            seen = talking[speaker] & valid
+            coverage.loc[speaker, person] = seen.sum() / max(1, talking[speaker].sum())
+            others = ~talking[speaker] & valid
+            # Speech of the other speakers only: silence and music say nothing about who talks.
+            others_talking = np.any([talking[s] for s in speakers if s != speaker], axis=0) & ~talking[speaker] \
+                if len(speakers) > 1 else np.zeros(n_frames, dtype=bool)
+            visible_elsewhere = valid[others_talking].mean() if others_talking.any() else coverage.loc[speaker, person]
+            visibility.loc[speaker, person] = coverage.loc[speaker, person] - visible_elsewhere
             if coverage.loc[speaker, person] >= min_coverage and others.any():
-                scores.loc[speaker, person] = z[seen].mean() - z[others].mean()
-    return scores, coverage
+                scores.loc[speaker, person] = (z[seen].mean() - z[others].mean()
+                                               + visibility_weight * visibility.loc[speaker, person])
+    return scores, coverage, visibility
 
 
 def assign(scores: pd.DataFrame, min_score: float) -> Dict[str, str]:
@@ -117,6 +127,8 @@ def main():
     parser.add_argument("--min_score", type=float, default=0.2, help="minimum z-score difference to link")
     parser.add_argument("--min_coverage", type=float, default=0.2,
                         help="minimum share of a speaker's time where the person's lips are visible")
+    parser.add_argument("--visibility_weight", type=float, default=1.0,
+                        help="weight of the on-screen term (0 to use the lips only)")
     args = parser.parse_args()
     d = args.out_dir
 
@@ -139,7 +151,8 @@ def main():
         poses, _ = decoder.decode(archive)
         activity[person] = lip_activity(mouth_opening(poses, n_frames), fps)
 
-    scores, coverage = score_matrix(activity, segments, n_frames, fps, args.min_coverage)
+    scores, coverage, visibility = score_matrix(activity, segments, n_frames, fps, args.min_coverage,
+                                                args.visibility_weight)
     mapping = assign(scores, args.min_score)
     linked = [scores.loc[s, p.removeprefix("person_")] for s, p in mapping.items() if p != OFFSCREEN]
 
@@ -149,7 +162,9 @@ def main():
         "agreement": float(np.mean(linked)) if linked else 0.0,
         "scores": json.loads(scores.round(3).to_json()),
         "lip_coverage": json.loads(coverage.round(3).to_json()),
-        "params": {"min_score": args.min_score, "min_coverage": args.min_coverage},
+        "visibility": json.loads(visibility.round(3).to_json()),
+        "params": {"min_score": args.min_score, "min_coverage": args.min_coverage,
+                   "visibility_weight": args.visibility_weight},
     }
     output.write_text(json.dumps(result, indent=2))
     print(json.dumps(result["mapping"], indent=2))
