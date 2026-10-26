@@ -42,6 +42,8 @@ Segment and track humans/objects in a video using **SAM3**.
 
 SAM3 supports text-prompted segmentation/tracking and chunked processing for long videos.
 Chunking helps keep memory usage stable by processing frames sequentially and stitching object IDs between chunks.
+Edited videos (talk shows, interviews, films) are handled too: tracking restarts at each shot change, and a person
+who comes back after a cut gets their previous ID back from their appearance.
 
 ```bash
 psifx video tracking sam3 inference \
@@ -51,6 +53,9 @@ psifx video tracking sam3 inference \
     [--chunk_size 300] \
     [--iou_threshold 0.3] \
     [--max_num_objects N] \
+    [--shot_threshold 0.15] \
+    [--reid_threshold 0.45] \
+    [--reid_model_path facebook/dinov2-small] \
     [--device cuda] \
     [--model_path facebook/sam3] \
 ```
@@ -60,13 +65,17 @@ psifx video tracking sam3 inference \
 * `--text_prompt`: Text query describing what to track, default is `"people"`.
 * `--chunk_size`: Number of frames processed per chunk. Lower values reduce peak memory usage.
 * `--iou_threshold`: IoU threshold used to stitch object IDs between adjacent chunks.
-* `--max_num_objects`: Optional cap on total tracked object tracks. Default is no explicit cap.
+* `--max_num_objects`: Optional cap on total tracked object tracks. Default is no explicit cap. Once the cap is reached, a new track takes the ID of the most similar person not visible at the same time.
+* `--shot_threshold`: Mean difference (0 to 1) between two consecutive frames above which a new shot starts. Tracking restarts at each shot, so that two people filmed in alternating close-ups do not swap IDs. `0` disables shot detection.
+* `--reid_threshold`: Minimum appearance similarity (cosine, -1 to 1) for a new track to take the ID of a person already seen, for example after a cut or when someone re-enters the frame. Otherwise the track gets a new ID. `-1` disables re-identification.
+* `--reid_model_path`: Image encoder used to describe appearance (masked person crop), default `facebook/dinov2-small`. You can also set `SAM3_REID_PATH` as an environment variable.
 * `--device`: Device on which to run inference, either `cpu` or `cuda`.
 * `--model_path`: Hugging Face model id or local path for SAM3 weights. You can also set `SAM3_PATH` as an environment variable.
 * `--api_token`: Optional Hugging Face token (defaults to `HF_TOKEN` env var if set).
 
 Notes:
 - If a CUDA chunk still runs out of memory, the tracker automatically retries by splitting that chunk into smaller subchunks.
+- Without the optional `kernels` package, transformers skips SAM3's duplicate-detection removal (NMS) and mask hole filling; psifx then runs built-in PyTorch/SciPy versions of both.
 - For gated models, provide `HF_TOKEN` or use a local model path.
 
 ### Tracking Visualization
