@@ -51,6 +51,8 @@ def build_stages(d: Path, args: argparse.Namespace) -> List[Stage]:
 
     stages = [
         Stage("tracking_sam3", [masks], psifx("video", "tracking", "sam3", "inference", *tracking)),
+        Stage("filter_tracks", [d / "tracks.json"], script(
+            "filter_tracks.py", str(d), "--min_presence", str(args.min_presence))),
         Stage("pose_body_rtmo", [poses_body], psifx(
             "video", "pose", "body", "multi-inference", "--video", video, "--masks", str(masks),
             "--poses_dir", str(poses_body), "--model", "rtmo", "--device", "cuda")),
@@ -124,6 +126,8 @@ def main():
     parser.add_argument("--text_prompt", default="person")
     parser.add_argument("--chunk_size", type=int, default=300)
     parser.add_argument("--max_objects", type=int, default=None)
+    parser.add_argument("--min_presence", type=float, default=0.05,
+                        help="tracks present in fewer frames are set aside before pose estimation")
     parser.add_argument("--whisper_model", default="large-v3-turbo", help="multilingual, unlike distil-large-v3")
     parser.add_argument("--language", default=None, help="forced language, auto-detected otherwise")
     parser.add_argument("--only", nargs="*", default=None, help="run only these stages (by name)")
