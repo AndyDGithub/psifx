@@ -1,0 +1,70 @@
+{
+ "0.tar.gz": {
+  "frames": 3000,
+  "pose_keypoints_2d": {
+   "found_legacy": 0.997,
+   "found_tasks": 0.972,
+   "median_dist_torso": 0.057,
+   "p90_dist_torso": 0.127
+  },
+  "face_keypoints_2d": {
+   "found_legacy": 0.923,
+   "found_tasks": 0.852,
+   "median_dist_torso": 0.011,
+   "p90_dist_torso": 0.023
+  },
+  "hand_left_keypoints_2d": {
+   "found_legacy": 0.194,
+   "found_tasks": 0.295,
+   "median_dist_torso": 0.002,
+   "p90_dist_torso": 0.015
+  },
+  "hand_right_keypoints_2d": {
+   "found_legacy": 0.475,
+   "found_tasks": 0.462,
+   "median_dist_torso": 0.001,
+   "p90_dist_torso": 0.01
+  },
+  "face_points_tasks": [
+   478
+  ],
+  "face_points_legacy": [
+   468,
+   478
+  ]
+ },
+ "1.tar.gz": {
+  "frames": 3000,
+  "pose_keypoints_2d": {
+   "found_legacy": 1.0,
+   "found_tasks": 0.993,
+   "median_dist_torso": 0.093,
+   "p90_dist_torso": 0.19
+  },
+  "face_keypoints_2d": {
+   "found_legacy": 0.674,
+   "found_tasks": 0.618,
+   "median_dist_torso": 0.007,
+   "p90_dist_torso": 0.016
+  },
+  "hand_left_keypoints_2d": {
+   "found_legacy": 0.145,
+   "found_tasks": 0.209,
+   "median_dist_torso": 0.008,
+   "p90_dist_torso": 0.056
+  },
+  "hand_right_keypoints_2d": {
+   "found_legacy": 0.15,
+   "found_tasks": 0.103,
+   "median_dist_torso": 0.007,
+   "p90_dist_torso": 0.03
+  },
+  "face_points_tasks": [
+   478
+  ],
+  "face_points_legacy": [
+   468,
+   478
+  ]
+ }
+}

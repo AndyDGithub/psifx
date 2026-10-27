@@ -12,6 +12,8 @@ RUN apt-get -y update && \
         htop \
         libboost-all-dev \
         libdlib-dev \
+        libegl1 \
+        libgles2 \
         libopenblas-dev \
         libopencv-dev \
         libopencv-calib3d-dev \

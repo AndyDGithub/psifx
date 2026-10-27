@@ -24,7 +24,7 @@ COCO_DIR = Path(__file__).resolve().parents[1] / "data" / "CocoPose"
 # Minimums sit a few points under the measured score: they catch regressions,
 # not small run-to-run noise.
 MIN_SCORES = {
-    "mediapipe": ("mediapipe", 0.60, 0.90, []),  # measured: OKS 0.647, PCK 0.968
+    "mediapipe": ("mediapipe", 0.60, 0.90, []),  # measured: OKS 0.713, PCK 0.985 (Tasks API; legacy 0.647, 0.968)
     "rtmo": ("rtmlib", 0.89, 0.95, []),  # measured: OKS 0.943, PCK 1.000
     "vitpose": ("transformers", 0.89, 0.93, []),  # measured: OKS 0.943, PCK 0.988
 }
