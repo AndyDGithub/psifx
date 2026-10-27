@@ -109,11 +109,25 @@ La diarisation et la transcription sont identiques ; seules les poses MediaPipe 
   est bruitée. Pour les lèvres, mieux vaut moins de visages mais de bonne qualité. Le repli est donc
   **désactivé par défaut**, et reste disponible pour les analyses qui demandent la présence du
   visage.
-- **La baisse sur V3 vient de la diarisation, pas de MediaPipe.** Quand la diarisation coupe
-  l'intervieweur en deux groupes de voix, le petit groupe (≈ 15 s) est relié par un score proche du
-  seuil : 0,25 avec l'ancienne API, −0,15 avec la nouvelle. Avec le bon nombre de locuteurs, les
-  trois versions donnent 97,7 %. L'association par les lèvres doit donc devenir robuste aux petits
-  groupes de voix ; ce sera l'objet de la future commande `identification`.
+- **La baisse sur V3 vient de MediaPipe, sur un point déjà fragile.** *(Corrigé le 2026-10-27 après le passage
+  de `dev` ; une première lecture l'attribuait à la diarisation.)* Les deux versions de la diarisation coupent
+  l'intervieweur en un groupe principal (≈ 136 s) et un petit groupe en gros plan (≈ 15 s). Le petit groupe lui est
+  affecté en premier, et le groupe principal doit passer seul le seuil de 0,2 :
+
+  | Diarisation | MediaPipe | Score du groupe principal | Attribution |
+  |---|---|---|---|
+  | 3.1 | ancienne API | 0,26 | 100 % |
+  | 3.1 | Tasks | −0,15 | 63,6 % |
+  | community-1 | ancienne API | 0,25 | 98,0 % |
+  | community-1 | Tasks | −0,15 | 63,6 % |
+
+  (Même transcription, celle du passage `dev`, et 39 étiquettes : d'où des valeurs un peu différentes du tableau
+  ci-dessus. Script : `.e2e_outputs/scratch/v3_why/run.sh`.)
+
+  Pendant les tours de l'intervieweur, souvent filmé en plan large ou de côté, son visage est trouvé sur 69 % des
+  images avec l'ancienne API, contre 44 % avec Tasks. Avec le bon nombre de locuteurs, l'affectation un à un suffit et
+  les trois versions donnent 97,7 %. À corriger : retrouver les visages manqués sans dégrader les lèvres, et rendre
+  l'association robuste aux petits groupes de voix (future commande `identification`).
 
 ## 4. Décision
 
@@ -125,7 +139,8 @@ Adopter l'API Tasks (mediapipe 1.1.1), sans repli par défaut :
 - elle lève le conflit protobuf qui bloquait pyannote 4.
 
 Restent deux limites, à traiter ailleurs :
-- le visage est moins souvent trouvé ;
+- le visage est moins souvent trouvé, ce qui fait tomber V3 à 63,6 % quand le nombre de locuteurs n'est pas donné
+  (§3.4) ;
 - l'association par les lèvres est sensible aux petits groupes de voix.
 
 Pour reproduire :
