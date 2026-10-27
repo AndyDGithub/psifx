@@ -177,6 +177,7 @@ sur moins de 5 % des images (`filter_tracks.py`).
 
 ```bash
 # dans le conteneur, avec HF_TOKEN
+pip install -r research/e2e/requirements.txt   # demucs, jiwer, yt-dlp
 export HF_HUB_DISABLE_XET=1
 python research/e2e/run_pipeline.py .e2e_outputs/v1_example --num_speakers 2 --stereo_mics --vitpose --chunk_size 64
 python research/e2e/run_pipeline.py .e2e_outputs/v2_ava --chunk_size 64

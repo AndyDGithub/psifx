@@ -1,0 +1,4 @@
+# Research-only tools of the end-to-end test, on top of `pip install -e ".[dev,rtm-gpu]"`.
+demucs==4.1.0  # --separate_vocals (V4: vocals separated from the music)
+jiwer==4.0.0   # word error rate against the lyrics (V4)
+yt-dlp         # download of the YouTube videos (V3, V4), personal research use only
