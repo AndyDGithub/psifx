@@ -141,7 +141,11 @@ test sur toute la partie test d'OCHuman complète le test COCO. Sur quatre vidé
 talk-show monté, danse), psifx produit des poses, une transcription et des sous-titres attribués à chaque personne,
 réutilisés pour reconstruire une vidéo avec squelettes 2D et 3D. Ce test a fait apparaître une faiblesse du suivi
 SAM3 sur les vidéos montées (57 pistes pour 2 personnes, puis saturation de la mémoire), corrigée par une session
-par plan et une ré-identification par l'apparence : chaque personne garde désormais une seule piste.
+par plan et une ré-identification par l'apparence : chaque personne garde désormais une seule piste. Deux outils ont
+été modernisés : la diarisation pyannote \code{community-1} estime bien mieux le nombre de locuteurs, en particulier
+dans le bruit, et fait passer le bon locuteur actif de 64,8 à 88,7\,\% sur le film ; MediaPipe passe à l'API
+\enquote{Tasks}, deux fois plus rapide. L'ensemble est rassemblé sur une branche et validé dans un environnement
+installé de zéro.
 
 \tableofcontents
 
@@ -1213,6 +1217,130 @@ transcription a le même texte avec des horodatages décalés de 0,02 à 0,44\,s
 peut pas se résoudre. \code{requirements.txt} reste donc sur pyannote~3.3.2. La voie propre est de porter
 MediaPipe vers l'API \enquote{Tasks}, sur une branche à part.
 
+\paragraph{Mise à jour.} Ce blocage est levé : MediaPipe passe à l'API \enquote{Tasks}
+(section~\ref{sec:mediapipe-tasks}), qui ne dépend plus de protobuf. \code{dev} utilise donc pyannote~4.0.7,
+\code{community-1} par défaut et whisperx~3.8.7rc1 (section~\ref{sec:dev-run}).
+
+\section{MediaPipe : passage à l'API \enquote{Tasks}}
+\label{sec:mediapipe-tasks}
+
+psifx utilisait \code{mediapipe.python.solutions.holistic}, l'API \enquote{Legacy Solutions}, que Google ne maintient
+plus depuis 2023 \cite{mediapipe_legacy}. Elle a disparu des versions récentes, et la garder imposait protobuf~$<$~5.
+L'outil passe au \code{HolisticLandmarker} en mode vidéo (mediapipe~1.1.1) \cite{mediapipe_holistic_tasks}, sur la
+branche \code{feature/mediapipe-tasks} (note \code{research/09_mediapipe_tasks.md}) :
+\begin{itemize}
+    \item \textbf{Modèle.} Le modèle (\code{holistic_landmarker.task}, 14\,Mo, public) est téléchargé au premier
+    usage, avec vérification de sa somme SHA-256 ; il peut aussi être donné en local, pour travailler hors ligne.
+    \item \textbf{Format.} Il est inchangé : 33 points du corps, 478 du visage et 21 par main. S'y ajoute la clé
+    \code{pose_keypoints_3d}, avec les points du corps en mètres.
+    \item \textbf{Options.} \code{--model_complexity} et \code{--smooth} n'ont plus d'effet, mais restent acceptées
+    pour ne pas casser les scripts existants.
+    \item \textbf{Système.} mediapipe~1.x a besoin de \code{libEGL} et de \code{libGLESv2}, ajoutées aux Dockerfiles.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Ancienne API contre API \enquote{Tasks} sur les pistes du test de bout en bout (CPU) et sur COCO.}
+\label{tab:mp-tasks}
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Mesure & Ancienne API & API \enquote{Tasks} \\
+\midrule
+Temps, V1 / V2 / V3 / V4 (s) & 131 / 653 / 1743 / 108 & \textbf{68 / 335 / 992 / 43} \\
+COCO, 500 images : OKS & 0,329 & 0,331 \\
+COCO, 500 images : images détectées & \textbf{78,2\,\%} & 63,8\,\% \\
+COCO, 8 images du test d'intégration : OKS & 0,647 & \textbf{0,713} \\
+Visage trouvé, V2 (moyenne des 2 personnes) & \textbf{80\,\%} & 43\,\% \\
+Visage trouvé, V3 (moyenne des 2 personnes) & \textbf{53\,\%} & 30\,\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+L'API \enquote{Tasks} est environ deux fois plus rapide. Pour le corps, sa précision est équivalente sur COCO
+(tableau~\ref{tab:mp-tasks}) : elle détecte moins de personnes sur des images fixes, mais elle est plus juste sur celles
+qu'elle trouve.
+
+\paragraph{Le visage.} Sa vraie régression porte sur le visage. L'ancien Holistic plaçait la zone du visage à partir de
+la pose, alors que le nouveau lance d'abord un détecteur de visage. Ce détecteur rate des visages de taille moyenne,
+pourtant de face.
+
+\paragraph{Un repli testé, puis désactivé.} Il place un recadrage de la tête à partir de la pose et y lance le
+\enquote{Face Landmarker}. Sur V2, il ramène le visage à 74\,\% des images, mais ces visages supplémentaires, petits ou
+de profil, rendent le signal des lèvres plus bruité. Sur V2 avec \code{community-1}, le bon locuteur actif tombe alors
+de 88,7 à 52,2\,\%, alors qu'il reste à 88,7\,\% sans le repli, comme avec l'ancienne API (88,8\,\%). Le repli est donc
+désactivé par défaut.
+
+\paragraph{Association voix--personne.} Sur V3, elle ne change pas quand la diarisation trouve les deux bons
+locuteurs (97,7\,\% dans les trois cas). Si la diarisation coupe l'intervieweur en deux groupes de voix, le petit groupe
+d'environ 15\,s bascule \enquote{hors champ}, et l'attribution tombe à 59\,\%. Cette fragilité vient de l'association
+par les lèvres, pas de MediaPipe : c'est elle qu'il faudra rendre robuste.
+
+\section{Intégration sur \code{dev} et nouvelle passe de bout en bout}
+\label{sec:dev-run}
+
+Tout a été rassemblé sur \code{dev} : le suivi SAM3 par plan, \code{community-1}, MediaPipe \enquote{Tasks}, la
+commande \code{body}, le test OCHuman, l'analyse de ViTPose et les scripts de bout en bout. La validation se fait dans
+un environnement conda neuf, installé avec \code{pip install -e ".[dev,rtm-gpu]"}, comme le ferait un utilisateur.
+
+\paragraph{Problèmes trouvés par l'environnement neuf, et corrigés.} Ils étaient invisibles dans l'environnement de
+travail, installé par étapes :
+\begin{itemize}
+    \item numpy~2.4 casse l'écriture vidéo de \code{skvideo}, qui appelle \code{ndarray.tostring()}, supprimé dans
+    numpy~2.3 \cite{numpy23}. numpy est donc fixé à 2.2.6.
+    \item Le rendu de bout en bout importait encore l'ancienne API de MediaPipe.
+    \item Le test d'intégration de la diarisation comparait les tours de parole un à un, avec les noms de locuteurs de
+    l'ancien modèle par défaut. Il compare désormais le DER (4,7\,\% pour \code{community-1}).
+    \item Les outils de recherche (demucs, jiwer, yt-dlp) sont maintenant listés dans
+    \code{research/e2e/requirements.txt}.
+\end{itemize}
+
+\paragraph{Ce qui reste.} Sur \code{dev}, 102 tests unitaires et 22 tests d'intégration passent, dont les deux tests OCHuman (AP inchangés : RTMO 0,289, ViTPose 0,343). L'identification par
+micros avec le modèle par défaut \code{speechbrain/spkrec-ecapa-voxceleb} échoue toujours. speechbrain~1.0.3 attend une
+erreur de la bibliothèque \code{requests} quand un fichier optionnel manque, alors que huggingface-hub~1.x passe par
+\code{httpx}. Ce défaut existait déjà ; le test de bout en bout le contourne avec \code{pyannote/embedding}.
+
+\begin{table}[H]
+\centering
+\caption{Test de bout en bout : premier passage (pyannote~3.1, ancienne API MediaPipe) et nouveau passage depuis
+\code{dev} (\code{community-1}, MediaPipe \enquote{Tasks}, whisperx~3.8.7rc1), dans un environnement neuf.}
+\label{tab:dev-run}
+\small
+\begin{tabular}{@{}llrr@{}}
+\toprule
+Vidéo & Mesure & Premier passage & \code{dev} \\
+\midrule
+V1 & association voix--personne (micros) & 100\,\% & 100\,\% \\
+V1 & facteur temps réel & 21,3$\times$ & 20,8$\times$ \\
+V2 & locuteurs trouvés & 4 & \textbf{2} \\
+V2 & bon locuteur actif (vérité AVA) & 64,8\,\% & \textbf{88,7\,\%} \\
+V2 & sous-titres sur une personne visible & 75,8\,\% & \textbf{100\,\%} \\
+V2 & facteur temps réel & 24,5$\times$ & 22,5$\times$ \\
+V3 & attribution, nombre de locuteurs estimé & 97,7\,\% & 63,6\,\% \\
+V3 & attribution, 2 locuteurs indiqués & --- & \textbf{98,0\,\%} \\
+V3 & facteur temps réel & 27,8$\times$ & 24,1$\times$ \\
+V4 & WER des paroles & 58,1\,\% & \textbf{55,2\,\%} \\
+V4 & facteur temps réel & 18,3$\times$ & 17,7$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{V3 : le point faible restant.} Sans nombre de locuteurs indiqué, \code{community-1} trouve 3 groupes de
+voix sur le talk-show : l'invitée (177~s), l'intervieweur (136~s) et un petit groupe de 16~s, qui est encore
+l'intervieweur. L'association par les lèvres est une affectation un à un, suivie d'un seuil pour les groupes restants.
+Ici, le petit groupe obtient le meilleur score pour l'intervieweur et lui est affecté en premier. Le groupe principal
+de l'intervieweur tombe alors sous le seuil (score $-0{,}15$) et devient \enquote{hors champ}. Seulement 63,6\,\% du
+temps étiqueté est attribué à la bonne personne. Au premier passage, le même cas s'était bien terminé par chance : le
+petit groupe passait juste au-dessus du seuil. Avec 2 locuteurs indiqués, l'attribution atteint 98,0\,\% (38 segments
+sur 39). Le défaut vient donc de l'association, pas des modèles. Il faudra fusionner les petits groupes de voix avec le
+groupe dont l'empreinte vocale est la plus proche avant l'affectation (chapitre~\ref{chap:futur}).
+
+La nouvelle transcription (whisperx~3.8.7rc1) découpe les segments autrement. Les étiquettes de texte de V3 ont donc
+été replacées sur les nouveaux segments par leur texte ; une seule étiquette, dont le segment est coupé différemment, a
+été écartée (39 au lieu de 40). Les vidéos rendues et les planches de chaque vidéo sont dans
+\code{.e2e_outputs/dev_2026-10-27/}.
+
+
 \section{Veille : solutions apparues depuis le début du travail}
 \label{sec:veille}
 
@@ -1230,13 +1358,19 @@ plus rapide à 128 objets. Poids accessibles, mais seulement pour le code de Met
 \code{transformers}. Le gain porte sur le nombre d'objets, pas sur les coupes. & À suivre \\
 pyannote \code{community-1} \cite{pyannote_community1} & Remplace \code{3.1} : DER de 49,7 à 44,6\,\% sur AVA-AVD,
 de 22,7 à 19,9\,\% sur AMI (chiffres de l'éditeur). Diarisation \enquote{exclusive} (un seul locuteur à la fois), qui
-simplifie l'alignement avec la transcription. Demande \code{pyannote.audio} 4 (psifx fige 3.3.2). & Testé, section~\ref{sec:community1} \\
+simplifie l'alignement avec la transcription. Demande \code{pyannote.audio} 4. & Adopté, section~\ref{sec:community1} \\
 Détection du locuteur actif & Modèles entraînés, par exemple LoCoNet (95,2 mAP sur AVA) ou Light-ASD (94,1, léger)
 \cite{wang2023loconet,liao2023lightasd}. Ils plafonnent encore sur des vidéos variées \cite{unitalk2025}. Pourraient
 remplacer la règle sur les lèvres. & Branche à tester \\
 Transcription & Canary-Qwen et Parakeet TDT v3 (multilingue) devant Whisper large-v3 sur l'Open ASR Leaderboard
 \cite{open_asr_leaderboard}, mesuré surtout sur de la parole propre. & À mesurer sur nos vidéos \\
 DINOv3 & Successeur de DINOv2, en accès restreint ; non testé. & Si l'accès est accordé \\
+MediaPipe~1.x & L'API \enquote{Legacy Solutions} a disparu ; Holistic, Face et Pose Landmarker de l'API
+\enquote{Tasks} \cite{mediapipe_holistic_tasks}. Deux fois plus rapide, mais trouve moins de visages. & Adopté,
+section~\ref{sec:mediapipe-tasks} \\
+SAM~3D Body \cite{sam3dbody2026} & Meta, CVPR~2026 : maillage 3D complet du corps, des mains et des pieds à partir
+d'une image, guidé par des points ou des masques (donc par les masques SAM3 de psifx). Image par image, 631 à 840~M
+de paramètres, accès restreint. & Branche à tester \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1298,17 +1432,21 @@ Trois axes ont été retenus pour la phase suivante :
     \cite{pvuw2026reprompt}.
 \end{enumerate}
 
-Le test d'occlusion a été fait avec OCHuman (section~\ref{sec:phase2-reunion}). Au 26 octobre 2026, SAM~3.1 n'est
+Le test d'occlusion a été fait avec OCHuman (section~\ref{sec:phase2-reunion}). Au 27 octobre 2026, SAM~3.1 n'est
 toujours pas intégré à \code{transformers} (section~\ref{sec:veille}). Le test de bout en bout
 (section~\ref{sec:e2e}) ajoute les axes suivants, tournés vers la fiabilité sur des vidéos réelles et bruitées :
 \begin{enumerate}[resume]
     \item \textbf{Association voix--personne dans psifx} : faire du script par les lèvres une commande
     (\code{psifx audio identification}) au même format que l'identification par micros, puis la comparer à un modèle
     de détection du locuteur actif entraîné \cite{liao2023lightasd}.
-    \item \textbf{Diarisation} : \code{community-1} est validé (section~\ref{sec:community1}) ; pour l'adopter dans
-    \code{requirements.txt}, porter MediaPipe vers l'API \enquote{Tasks} (\code{HolisticLandmarker}), ce qui lève le
-    conflit protobuf, puis passer à whisperx~3.8.7. Corriger aussi l'identification par micros, qui plante quand la
-    diarisation trouve plus de locuteurs que de micros.
+    \item \textbf{Association robuste aux petits groupes de voix} : quand la diarisation coupe une personne en deux,
+    le petit groupe doit rejoindre la personne la plus proche plutôt que basculer \enquote{hors champ}
+    (section~\ref{sec:mediapipe-tasks}). Corriger aussi l'identification par micros, qui plante quand la diarisation
+    trouve plus de locuteurs que de micros, ou avec le modèle speechbrain par défaut (section~\ref{sec:dev-run}).
+    \item \textbf{Visage avec MediaPipe \enquote{Tasks}} : retrouver les visages manqués sans dégrader le signal des
+    lèvres, par exemple en ne gardant que les visages assez grands et de face.
+    \item \textbf{Maillage 3D du corps} : tester SAM~3D Body \cite{sam3dbody2026}, guidé par les masques SAM3, pour
+    remplacer le squelette 3D de MediaPipe dans la vidéo reconstruite.
     \item \textbf{Robustesse au bruit et à la musique} : séparation de la voix avant transcription (option psifx),
     transcription vide plutôt qu'un plantage quand aucune parole n'est détectée, et mesure du WER sur de la parole
     bruitée.
@@ -1341,8 +1479,11 @@ exploitables : poses 2D et 3D par personne, transcription et sous-titres attribu
 reconstruire une vidéo. Elle a surtout montré où cette chaîne casse sur des vidéos réelles : le montage, que le suivi
 SAM3 gère désormais par plan avec une ré-identification par l'apparence ; la musique, qui demande de séparer la voix ;
 les visages peu lisibles et la diarisation qui sur-découpe. La suite vise la fiabilité dans ces conditions : intégrer
-l'association voix--personne à psifx, adopter pyannote \code{community-1}, qui estime bien mieux le nombre de
-locuteurs dans le bruit et sur les films, et agir avant la diarisation pour le bruit fort (chapitre~\ref{chap:futur}).
+l'association voix--personne à psifx en la rendant robuste aux erreurs de diarisation, et agir avant la diarisation
+pour le bruit fort (chapitre~\ref{chap:futur}). Les outils ont été modernisés en chemin : pyannote \code{community-1},
+qui estime bien mieux le nombre de locuteurs dans le bruit et sur les films, et MediaPipe \enquote{Tasks}, deux fois
+plus rapide. Tout est rassemblé sur \code{dev} et validé dans un environnement neuf, prêt pour une version de
+\code{main}.
 
 % =============================================================================
 \appendix
@@ -1372,7 +1513,11 @@ Branche & Contenu \\
 \code{feature/pose-body-command} & \code{psifx video pose body} (RTMO, ViTPose) \\
 \code{feature/tests-ochuman} & Test de précision sur OCHuman \\
 \code{fix/sam3-shot-changes} & Suivi SAM3 à travers les plans (mergée dans \code{dev}) \\
-\code{experiment/e2e-demo} & Test de bout en bout, 3D MediaPipe \\
+\code{experiment/e2e-demo} & Test de bout en bout, 3D MediaPipe (mergée dans \code{dev}) \\
+\code{feature/diarization-community-1} & pyannote~4, \code{community-1} (mergée dans \code{dev}) \\
+\code{feature/mediapipe-tasks} & MediaPipe \enquote{Tasks} (mergée dans \code{dev}) \\
+\code{fix/numpy-skvideo}, \code{fix/e2e-*} & Correctifs trouvés par l'environnement neuf (mergées) \\
+\code{dev-before-integration} & \code{dev} avant l'intégration du 27 octobre (sauvegarde) \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1413,8 +1558,11 @@ python research/e2e/summarize.py .e2e_outputs/v1_example .e2e_outputs/v2_ava ...
 
 \section{Versions logicielles}
 
-PyTorch 2.8.0 (cu128), \code{transformers} 5.3.0 (SAM3, DINOv2-small), \code{rtmlib} 0.0.16, \code{onnxruntime-gpu} 1.20.2,
-\code{onnx} 1.17.0, protobuf 4.25.9 (exigé par MediaPipe 0.10.14), numpy 2.0.2. Environnement DETRPose : Python
+Environnement de \code{dev} au 27 octobre 2026 (installé de zéro) : PyTorch 2.8.0 (cu128), \code{transformers} 5.3.0
+(SAM3, DINOv2-small), huggingface-hub 1.7.1, \code{rtmlib} 0.0.16, \code{onnxruntime-gpu} 1.20.2, mediapipe 1.1.1
+(API \enquote{Tasks}), pyannote.audio 4.0.7 (\code{community-1}), whisperx 3.8.7rc1, torchcodec 0.7.0, numpy 2.2.6,
+protobuf 7.36.2. Les mesures des chapitres~\ref{chap:resultats}~et suivants, avant la section~\ref{sec:mediapipe-tasks},
+ont été faites avec mediapipe 0.10.14, protobuf 4.25.9, numpy 2.0.2 et pyannote.audio 3.3.2. Environnement DETRPose : Python
 3.11.9, PyTorch 2.14.1 (cu130), numpy 1.23.5.
 
 \printbibliography[heading=bibintoc, title={Bibliographie}]

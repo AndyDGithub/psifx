@@ -136,7 +136,7 @@ plus saccadé.
 | `audio identification` : modèle par défaut speechbrain | `RemoteEntryNotFoundError` (`custom.py`) avec un `huggingface_hub` récent | `--model_names pyannote/embedding` |
 | WhisperX sans parole détectée | `IndexError` dans le pipeline transformers au lieu d'une transcription vide | Séparer la voix (Demucs) |
 | `--language` de la transcription | Option lue, mais jamais transmise à `pipeline.transcribe` | Langue auto-détectée |
-| MediaPipe, nombre de points du visage | 468 zéros quand aucun visage n'est trouvé, 478 points sinon | Le lecteur prend la taille maximale |
+| MediaPipe, nombre de points du visage | 468 zéros quand aucun visage n'est trouvé, 478 points sinon | **Corrigé** par le passage à l'API Tasks (note 09) |
 | SAM3, une piste par plan + un encodeur ouvert par piste | Explosion de la RAM sur une vidéo montée (§4.2) | **Corrigé** dans psifx (§7) |
 
 ## 6. Ce qui mériterait de devenir une commande psifx
@@ -173,7 +173,36 @@ V3 complète : 18 pistes pour 113 plans, chaque personne en une seule piste pure
 piste, IoU moyenne 0,974 avec les anciens masques), +7 % de temps. Le pipeline écarte ensuite les pistes présentes
 sur moins de 5 % des images (`filter_tracks.py`).
 
-## 8. Reproduire
+## 8. Nouveau passage depuis `dev` (2026-10-27)
+
+Environnement neuf (`pip install -e ".[dev,rtm-gpu]"`) : pyannote `community-1`, MediaPipe « Tasks » (1.1.1) et
+whisperx 3.8.7rc1. Les sorties sont dans `.e2e_outputs/dev_2026-10-27/<vidéo>/` (`render.mp4`, `contact_sheet.jpg`,
+`metrics.json`).
+
+| Vidéo | Mesure | Premier passage | `dev` |
+|---|---|---|---|
+| V1 | association voix–personne (micros) | 100 % | 100 % |
+| V1 | facteur temps réel | 21,3× | 20,8× |
+| V2 | locuteurs trouvés | 4 | **2** |
+| V2 | bon locuteur actif (vérité AVA) | 64,8 % | **88,7 %** |
+| V2 | sous-titres sur une personne visible | 75,8 % | **100 %** |
+| V2 | facteur temps réel | 24,5× | 22,5× |
+| V3 | attribution, nombre de locuteurs estimé | 97,7 % | 63,6 % |
+| V3 | attribution, 2 locuteurs indiqués (`v3_talkshow_2spk`) | — | **98,0 %** |
+| V3 | facteur temps réel | 27,8× | 24,1× |
+| V4 | WER des paroles | 58,1 % | **55,2 %** |
+| V4 | facteur temps réel | 18,3× | 17,7× |
+
+**V3 :**
+- sans nombre de locuteurs, la diarisation crée un petit groupe de 16 s pour l'intervieweur ;
+- l'affectation un à un donne ce petit groupe à l'intervieweur, et son groupe principal (136 s) tombe sous le seuil, en
+  « hors champ » ;
+- c'est la fragilité de l'association aux petits groupes de voix (note 09, §3.4), pas un défaut des modèles.
+
+La transcription découpe autrement : les étiquettes de texte ont été replacées sur les nouveaux segments par leur
+texte (39 sur 40 ; un segment coupé différemment est écarté).
+
+## 9. Reproduire
 
 ```bash
 # dans le conteneur, avec HF_TOKEN
@@ -182,7 +211,7 @@ export HF_HUB_DISABLE_XET=1
 python research/e2e/run_pipeline.py .e2e_outputs/v1_example --num_speakers 2 --stereo_mics --vitpose --chunk_size 64
 python research/e2e/run_pipeline.py .e2e_outputs/v2_ava --chunk_size 64
 python research/e2e/run_pipeline.py .e2e_outputs/v4_dance --separate_vocals --num_speakers 1 --vitpose --chunk_size 64
-python research/e2e/run_pipeline.py .e2e_outputs/v3_talkshow --chunk_size 64
+python research/e2e/run_pipeline.py .e2e_outputs/v3_talkshow --chunk_size 64   # add --num_speakers 2 if known
 python research/e2e/summarize.py .e2e_outputs/v1_example .e2e_outputs/v2_ava .e2e_outputs/v3_talkshow .e2e_outputs/v4_dance
 ```
 
