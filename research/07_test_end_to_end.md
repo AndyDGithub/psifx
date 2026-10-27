@@ -197,7 +197,8 @@ whisperx 3.8.7rc1. Les sorties sont dans `.e2e_outputs/dev_2026-10-27/<vidéo>/`
 - sans nombre de locuteurs, la diarisation crée un petit groupe de 16 s pour l'intervieweur ;
 - l'affectation un à un donne ce petit groupe à l'intervieweur, et son groupe principal (136 s) tombe sous le seuil, en
   « hors champ » ;
-- c'est la fragilité de l'association aux petits groupes de voix (note 09, §3.4), pas un défaut des modèles.
+- la cause est MediaPipe Tasks : le visage de l'intervieweur n'est trouvé que sur 44 % des images de ses tours (69 %
+  avec l'ancienne API), et le score passe de 0,25 à −0,15 ; la version de la diarisation ne joue aucun rôle (note 09, §3.4).
 
 La transcription découpe autrement : les étiquettes de texte ont été replacées sur les nouveaux segments par leur
 texte (39 sur 40 ; un segment coupé différemment est écarté).

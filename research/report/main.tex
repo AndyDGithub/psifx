@@ -1272,9 +1272,8 @@ de 88,7 à 52,2\,\%, alors qu'il reste à 88,7\,\% sans le repli, comme avec l'a
 désactivé par défaut.
 
 \paragraph{Association voix--personne.} Sur V3, elle ne change pas quand la diarisation trouve les deux bons
-locuteurs (97,7\,\% dans les trois cas). Si la diarisation coupe l'intervieweur en deux groupes de voix, le petit groupe
-d'environ 15\,s bascule \enquote{hors champ}, et l'attribution tombe à 59\,\%. Cette fragilité vient de l'association
-par les lèvres, pas de MediaPipe : c'est elle qu'il faudra rendre robuste.
+locuteurs (97,7\,\% dans les trois cas). Si la diarisation coupe l'intervieweur en deux groupes de voix, elle tombe à
+59\,\% avec l'API \enquote{Tasks} : la section~\ref{sec:dev-run} en donne la cause.
 
 \section{Intégration sur \code{dev} et nouvelle passe de bout en bout}
 \label{sec:dev-run}
@@ -1325,15 +1324,41 @@ V4 & facteur temps réel & 18,3$\times$ & 17,7$\times$ \\
 \end{tabular}
 \end{table}
 
-\paragraph{V3 : le point faible restant.} Sans nombre de locuteurs indiqué, \code{community-1} trouve 3 groupes de
-voix sur le talk-show : l'invitée (177~s), l'intervieweur (136~s) et un petit groupe de 16~s, qui est encore
-l'intervieweur. L'association par les lèvres est une affectation un à un, suivie d'un seuil pour les groupes restants.
-Ici, le petit groupe obtient le meilleur score pour l'intervieweur et lui est affecté en premier. Le groupe principal
-de l'intervieweur tombe alors sous le seuil (score $-0{,}15$) et devient \enquote{hors champ}. Seulement 63,6\,\% du
-temps étiqueté est attribué à la bonne personne. Au premier passage, le même cas s'était bien terminé par chance : le
-petit groupe passait juste au-dessus du seuil. Avec 2 locuteurs indiqués, l'attribution atteint 98,0\,\% (38 segments
-sur 39). Le défaut vient donc de l'association, pas des modèles. Il faudra fusionner les petits groupes de voix avec le
-groupe dont l'empreinte vocale est la plus proche avant l'affectation (chapitre~\ref{chap:futur}).
+\paragraph{V3 : le point faible restant.} Sans nombre de locuteurs indiqué, la diarisation trouve 3 groupes de voix
+sur le talk-show : l'invitée (177~s), l'intervieweur (136~s) et un petit groupe de 16~s, qui est encore l'intervieweur,
+filmé en gros plan. L'association par les lèvres est une affectation un à un, suivie d'un seuil (0,2) pour les groupes
+restants. Le petit groupe obtient le meilleur score pour l'intervieweur et lui est affecté en premier ; son groupe
+principal doit alors passer le seuil seul.
+
+Pour trouver la cause de la baisse, chaque facteur a été changé séparément, avec la même transcription
+(tableau~\ref{tab:v3-why}). La version de la diarisation ne joue aucun rôle : les deux versions produisent le même petit
+groupe. Tout vient des poses MediaPipe. Pendant les tours de parole de l'intervieweur, la caméra le montre souvent en
+plan large ou de côté. Le visage y est trouvé sur 69\,\% des images avec l'ancienne API, contre 44\,\% avec l'API
+\enquote{Tasks}, dont le détecteur de visage rate les visages moyens (section~\ref{sec:mediapipe-tasks}). Le score du
+groupe principal passe de 0,25 à $-0{,}15$, sous le seuil : la voix devient \enquote{hors champ}.
+
+\begin{table}[H]
+\centering
+\caption{V3, score du groupe de voix principal de l'intervieweur et attribution, selon la diarisation et MediaPipe, avec la même transcription (passage \code{dev}, 39 étiquettes).}
+\label{tab:v3-why}
+\small
+\begin{tabular}{@{}llrr@{}}
+\toprule
+Diarisation & MediaPipe & Score (seuil 0,2) & Attribution \\
+\midrule
+3.1 (premier passage) & ancienne API & 0,26 & 100\,\% \\
+3.1 (premier passage) & \enquote{Tasks} & $-0{,}15$ & 63,6\,\% \\
+\code{community-1} & ancienne API & 0,25 & 98,0\,\% \\
+\code{community-1} & \enquote{Tasks} & $-0{,}15$ & 63,6\,\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Ce n'est donc pas un hasard de mesure, mais une vraie régression du portage, sur un point déjà fragile : même avec
+l'ancienne API, le score ne dépassait le seuil que de 0,05. Avec 2 locuteurs indiqués, l'affectation un à un suffit et
+l'attribution atteint 98,0\,\% (38 segments sur 39). Deux corrections sont possibles : retrouver les visages manqués
+(un repli qui ne dégrade pas les lèvres, ou un autre détecteur de visage), et fusionner les petits groupes de voix avec
+le groupe dont l'empreinte vocale est la plus proche avant l'affectation (chapitre~\ref{chap:futur}).
 
 La nouvelle transcription (whisperx~3.8.7rc1) découpe les segments autrement. Les étiquettes de texte de V3 ont donc
 été replacées sur les nouveaux segments par leur texte ; une seule étiquette, dont le segment est coupé différemment, a
