@@ -51,3 +51,15 @@ pytest tests/integration/video/test_pose_coco_accuracy.py -s   # -s prints the m
 
 `tests/pose_eval/` holds the COCO evaluation code (keypoint definitions, OKS/PCK, archive scoring);
 `tests/unit/pose_eval/` tests it.
+
+## Pose accuracy on a full dataset (OCHuman)
+
+`tests/integration/video/test_pose_ochuman_accuracy.py` evaluates the body pose tools on the whole OCHuman test
+split (heavily occluded people, not part of the RTM models' training data) with the official COCO keypoint AP.
+OCHuman cannot be redistributed: download it once (see `tests/pose_eval/ochuman.py`), then run
+
+```bash
+OCHUMAN_ROOT=/path/to/ochuman pytest -m dataset -s
+```
+
+These tests are marked `dataset` and skipped when `OCHUMAN_ROOT` is not set.
