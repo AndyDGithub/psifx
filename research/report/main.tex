@@ -31,6 +31,7 @@
 \usepackage{float}
 \usepackage{caption}
 \usepackage{microtype}
+\DisableLigatures[-]{encoding=T1,family=tt*} % keep "--option" as two hyphens in \code
 \usepackage[hidelinks]{hyperref}
 \setlength{\emergencystretch}{3em}
 
@@ -1135,6 +1136,83 @@ de la vidéo avant la correction, et la mémoire reste stable. Chacune des deux 
 pure sur les 5,5 minutes. Les 15 autres pistes sont présentes sur moins de 2,5\,\% des images, sauf la main en gros
 plan (15\,\%). Le suivi prend 6192\,s, soit 18,6$\times$ le temps réel.
 
+\section{Diarisation : pyannote \code{community-1}}
+\label{sec:community1}
+
+pyannote a publié en 2025 le pipeline \code{community-1} \cite{pyannote_community1}, qui demande
+\code{pyannote.audio}~4. Il a été comparé à la \code{3.1} sur sa propre branche
+(\code{feature/diarization-community-1}, note \code{research/08_diarization_community1.md}).
+
+\paragraph{Adaptation de psifx.} Le code accepte désormais pyannote~3 et~4 :
+\begin{itemize}
+    \item le jeton s'appelle \code{token} au lieu de \code{use_auth_token} ;
+    \item la sortie est un \code{DiarizeOutput} ;
+    \item trois options sont ajoutées : \code{--min_speakers}, \code{--max_speakers} et \code{--exclusive} (un seul
+    locuteur à la fois) ;
+    \item le modèle par défaut est \code{community-1} sous pyannote~4.
+\end{itemize}
+pyannote~4 envoie par défaut à pyannoteAI le nom du modèle et la durée de chaque audio. psifx désactive cette
+télémétrie.
+
+\paragraph{Protocole.} Deux références ont été construites :
+\begin{itemize}
+    \item V1 : une pseudo-référence tirée des deux micros (le micro dominant d'au moins 6\,dB) ;
+    \item V3 : les 40 segments étiquetés d'après le texte.
+\end{itemize}
+V1 a été mélangée à trois bruits, à 10, 5 et 0\,dB de RSB : un bruit rose, la musique de V4 (voix chantée
+comprise) et un brouhaha (trois copies décalées du talk-show). Le cas réaliste est celui où le nombre de
+locuteurs n'est pas donné au modèle.
+
+\begin{table}[H]
+\centering
+\caption{Diarisation \code{3.1} contre \code{community-1}, nombre de locuteurs estimé par le modèle. DER avec un
+collar de 0,25\,s ; entre parenthèses, le nombre de locuteurs trouvés (2 attendus sur V1).}
+\label{tab:community1}
+\small
+\begin{tabular}{@{}llrr@{}}
+\toprule
+Cas & Mesure & \code{3.1} & \code{community-1} \\
+\midrule
+V2 AVA (film) & bon locuteur actif (vérité AVA) & 64,8\,\% & \textbf{88,8\,\%} \\
+V3 talk-show & DER (segments étiquetés) & 11,4\,\% & 11,6\,\% \\
+V3 talk-show & attribution des sous-titres & 97,7\,\% & 97,7\,\% \\
+V1, bruit rose 10\,dB & DER & 38,7\,\% (4) & \textbf{12,0\,\% (2)} \\
+V1, bruit rose 0\,dB & DER & 56,2\,\% (1) & 56,2\,\% (1) \\
+V1, musique 10\,dB & DER & 48,2\,\% (4) & \textbf{20,8\,\% (2)} \\
+V1, brouhaha 10\,dB & DER & 44,2\,\% (4) & \textbf{28,8\,\% (2)} \\
+V1, brouhaha 0\,dB & DER & 77,4\,\% (4) & \textbf{45,5\,\% (2)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Résultats.} \code{community-1} est meilleur ou égal partout (tableau~\ref{tab:community1}), pour le même
+temps de calcul (15,5\,s contre 14,4\,s pour les 330\,s de V3) :
+\begin{itemize}
+    \item \textbf{Nombre de locuteurs.} Le gain vient de son estimation : dans le bruit, la \code{3.1} trouve 3 à 5
+    locuteurs pour 2 personnes dans 6 cas sur 9, \code{community-1} en trouve 2 dans 8 cas sur 9.
+    \item \textbf{Film (V2).} Les locuteurs en trop de la \code{3.1} partaient \enquote{hors champ} et leurs
+    sous-titres perdaient leur couleur : le bon locuteur actif passe de 64,8 à 88,8\,\% des instants annotés.
+    \item \textbf{Détection de parole.} Elle est identique pour les deux : à 0\,dB de bruit rose, 52\,\% de la parole
+    est perdue. La robustesse au bruit fort se jouera donc avant la diarisation (séparation ou rehaussement de la
+    voix).
+    \item \textbf{Une limite.} Avec le brouhaha à 5\,dB, \code{community-1} trouve 2 locuteurs mais mélange les deux
+    voix réelles.
+\end{itemize}
+
+\paragraph{Ce qui bloque la fusion.} Le blocage est dans les dépendances, pas dans le modèle :
+\begin{itemize}
+    \item \textbf{whisperx.} pyannote~4 impose whisperx~3.8 ; seule la pré-version \code{3.8.7rc1} accepte
+    huggingface-hub~1.x \cite{whisperx_pr1375}, que demande transformers~5 (SAM3).
+    \item \textbf{protobuf.} La télémétrie de pyannote~4 déclare protobuf~$\geq$~5. mediapipe~0.10.14 exige au
+    contraire protobuf~$<$~5, et plante réellement avec la version~5.
+    \item \textbf{mediapipe.} Les versions récentes de mediapipe n'ont plus l'API \enquote{Solutions} utilisée par
+    psifx \cite{mediapipe_legacy}.
+\end{itemize}
+Avec protobuf~4.25 et la télémétrie coupée, tout fonctionne : les poses MediaPipe sont identiques au bit près, et la
+transcription a le même texte avec des horodatages décalés de 0,02 à 0,44\,s. Mais \code{pip install psifx} ne
+peut pas se résoudre. \code{requirements.txt} reste donc sur pyannote~3.3.2. La voie propre est de porter
+MediaPipe vers l'API \enquote{Tasks}, sur une branche à part.
+
 \section{Veille : solutions apparues depuis le début du travail}
 \label{sec:veille}
 
@@ -1152,7 +1230,7 @@ plus rapide à 128 objets. Poids accessibles, mais seulement pour le code de Met
 \code{transformers}. Le gain porte sur le nombre d'objets, pas sur les coupes. & À suivre \\
 pyannote \code{community-1} \cite{pyannote_community1} & Remplace \code{3.1} : DER de 49,7 à 44,6\,\% sur AVA-AVD,
 de 22,7 à 19,9\,\% sur AMI (chiffres de l'éditeur). Diarisation \enquote{exclusive} (un seul locuteur à la fois), qui
-simplifie l'alignement avec la transcription. Demande \code{pyannote.audio} 4 (psifx fige 3.3.2). & Branche à tester \\
+simplifie l'alignement avec la transcription. Demande \code{pyannote.audio} 4 (psifx fige 3.3.2). & Testé, section~\ref{sec:community1} \\
 Détection du locuteur actif & Modèles entraînés, par exemple LoCoNet (95,2 mAP sur AVA) ou Light-ASD (94,1, léger)
 \cite{wang2023loconet,liao2023lightasd}. Ils plafonnent encore sur des vidéos variées \cite{unitalk2025}. Pourraient
 remplacer la règle sur les lèvres. & Branche à tester \\
@@ -1227,8 +1305,10 @@ toujours pas intégré à \code{transformers} (section~\ref{sec:veille}). Le tes
     \item \textbf{Association voix--personne dans psifx} : faire du script par les lèvres une commande
     (\code{psifx audio identification}) au même format que l'identification par micros, puis la comparer à un modèle
     de détection du locuteur actif entraîné \cite{liao2023lightasd}.
-    \item \textbf{Diarisation} : passer à pyannote \code{community-1}, qui réduit le sur-découpage et donne des tours
-    de parole exclusifs, plus faciles à aligner avec la transcription.
+    \item \textbf{Diarisation} : \code{community-1} est validé (section~\ref{sec:community1}) ; pour l'adopter dans
+    \code{requirements.txt}, porter MediaPipe vers l'API \enquote{Tasks} (\code{HolisticLandmarker}), ce qui lève le
+    conflit protobuf, puis passer à whisperx~3.8.7. Corriger aussi l'identification par micros, qui plante quand la
+    diarisation trouve plus de locuteurs que de micros.
     \item \textbf{Robustesse au bruit et à la musique} : séparation de la voix avant transcription (option psifx),
     transcription vide plutôt qu'un plantage quand aucune parole n'est détectée, et mesure du WER sur de la parole
     bruitée.
@@ -1261,8 +1341,8 @@ exploitables : poses 2D et 3D par personne, transcription et sous-titres attribu
 reconstruire une vidéo. Elle a surtout montré où cette chaîne casse sur des vidéos réelles : le montage, que le suivi
 SAM3 gère désormais par plan avec une ré-identification par l'apparence ; la musique, qui demande de séparer la voix ;
 les visages peu lisibles et la diarisation qui sur-découpe. La suite vise la fiabilité dans ces conditions : intégrer
-l'association voix--personne à psifx, passer à pyannote \code{community-1}, et mesurer la robustesse au bruit
-(chapitre~\ref{chap:futur}).
+l'association voix--personne à psifx, adopter pyannote \code{community-1}, qui estime bien mieux le nombre de
+locuteurs dans le bruit et sur les films, et agir avant la diarisation pour le bruit fort (chapitre~\ref{chap:futur}).
 
 % =============================================================================
 \appendix
