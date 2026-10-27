@@ -72,9 +72,9 @@ def load_people(directory: Path, n_frames: int) -> Dict[str, Dict[str, np.ndarra
 
 
 def face_contour_edges():
-    from mediapipe.python.solutions.face_mesh_connections import FACEMESH_CONTOURS
+    from mediapipe.tasks.python.vision import FaceLandmarksConnections
 
-    return tuple(FACEMESH_CONTOURS)
+    return tuple((c.start, c.end) for c in FaceLandmarksConnections.FACE_LANDMARKS_CONTOURS)
 
 
 def draw_edges(img, points, edges, color, thickness, min_conf=None, scale=1.0, offset=(0, 0)):
