@@ -19,7 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         libboost-all-dev \
         libdlib-dev \
+        libegl1 \
         libgl1 \
+        libgles2 \
         libglib2.0-0 \
         libopenblas-dev \
         libopencv-dev \

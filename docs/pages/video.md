@@ -103,7 +103,14 @@ psifx video tracking visualization \
 
 ### Pose Estimation
 
-Detects and analyzes human poses in a video using MediaPipe.
+Detects and analyzes human poses in a video using the MediaPipe Holistic Landmarker (Tasks API): 33 body points
+(also in 3D, see below), 478 face points (mesh and irises) and 21 points per hand. The model bundle
+(`holistic_landmarker.task`, 14 MB) is downloaded to `~/.cache/psifx/mediapipe` on first use; the
+`MEDIAPIPE_HOLISTIC_PATH` environment variable or `--model_path` points to another copy, for offline use.
+MediaPipe needs the system libraries `libEGL.so.1` and `libGLESv2.so.2` (Ubuntu packages `libegl1` and `libgles2`).
+
+Besides the 2D parts, each frame holds `pose_keypoints_3d`: the 33 body points as `[x, y, z, visibility]` in meters,
+with the origin between the hips (MediaPipe *world landmarks*).
 
 There are two methods for whether the video contains a single person or multiple people.
 
@@ -141,15 +148,22 @@ These arguments can be used in both the above commands to configure the inferenc
 
 ```bash
     [--mask_threshold 0.1] \
-    [--model_complexity 2] \
-    [--smooth] \
+    [--model_path holistic_landmarker.task] \
+    [--face_fallback] \
+    [--min_detection_confidence 0.5] [--min_presence_confidence 0.5] \
     [--device cuda]
 ```
 
 - `--mask_threshold`: Threshold for the binarization of the segmentation mask, default `0.1`.
-- `--model_complexity`: Complexity of the model: {`0`, `1`, `2`}, higher means more FLOPs, but also more accurate
-  results, default `2`.
-- `--smooth`: Temporally smooth the inference results to reduce the jitter, default `True`.
+- `--model_path`: URL or local path of the Holistic Landmarker bundle, by default the float16 model of Google.
+- `--min_detection_confidence`, `--min_presence_confidence`: Minimum scores of the detections that start a track
+  (body, face) and of the landmarks that are kept (body, face, hands), default `0.5`.
+- `--face_fallback`: Look for the face on a crop placed from the body pose when the Holistic model misses it, with
+  the MediaPipe Face Landmarker (`face_landmarker.task`, 4 MB, downloaded on first use). The Tasks Holistic model
+  misses many medium-size faces that the legacy one found (AVA clip: face in 43 % of the frames instead of 80 %);
+  the fallback brings it back to 74 %, but the extra faces give a noisier mouth signal. Off by default.
+- `--model_complexity`, `--smooth`: Ignored since the move to the Tasks API, which has a single Holistic model and
+  always tracks and smooths in video mode. They are kept so that existing scripts still run.
 - `--device`: Device on which to run the inference, either `cpu` or `cuda`, by default `cuda` if available.
 
 #### RTMO

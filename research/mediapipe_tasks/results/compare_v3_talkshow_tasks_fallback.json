@@ -1,0 +1,103 @@
+{
+ "0.tar.gz": {
+  "frames": 8319,
+  "pose_keypoints_2d": {
+   "found_legacy": 0.632,
+   "found_tasks": 0.632,
+   "median_dist_torso": 0.053,
+   "p90_dist_torso": 0.094
+  },
+  "face_keypoints_2d": {
+   "found_legacy": 0.404,
+   "found_tasks": 0.361,
+   "median_dist_torso": 0.007,
+   "p90_dist_torso": 0.014
+  },
+  "hand_left_keypoints_2d": {
+   "found_legacy": 0.413,
+   "found_tasks": 0.406,
+   "median_dist_torso": 0.005,
+   "p90_dist_torso": 0.036
+  },
+  "hand_right_keypoints_2d": {
+   "found_legacy": 0.381,
+   "found_tasks": 0.379,
+   "median_dist_torso": 0.004,
+   "p90_dist_torso": 0.037
+  },
+  "face_points_tasks": [
+   478
+  ],
+  "face_points_legacy": [
+   468,
+   478
+  ]
+ },
+ "1.tar.gz": {
+  "frames": 8319,
+  "pose_keypoints_2d": {
+   "found_legacy": 0.71,
+   "found_tasks": 0.7,
+   "median_dist_torso": 0.057,
+   "p90_dist_torso": 0.11
+  },
+  "face_keypoints_2d": {
+   "found_legacy": 0.651,
+   "found_tasks": 0.599,
+   "median_dist_torso": 0.006,
+   "p90_dist_torso": 0.013
+  },
+  "hand_left_keypoints_2d": {
+   "found_legacy": 0.341,
+   "found_tasks": 0.322,
+   "median_dist_torso": 0.002,
+   "p90_dist_torso": 0.024
+  },
+  "hand_right_keypoints_2d": {
+   "found_legacy": 0.309,
+   "found_tasks": 0.32,
+   "median_dist_torso": 0.006,
+   "p90_dist_torso": 0.082
+  },
+  "face_points_tasks": [
+   478
+  ],
+  "face_points_legacy": [
+   468,
+   478
+  ]
+ },
+ "8.tar.gz": {
+  "frames": 8319,
+  "pose_keypoints_2d": {
+   "found_legacy": 0.004,
+   "found_tasks": 0.003,
+   "median_dist_torso": 0.263,
+   "p90_dist_torso": 3.055
+  },
+  "face_keypoints_2d": {
+   "found_legacy": 0.0,
+   "found_tasks": 0.0,
+   "median_dist_torso": null,
+   "p90_dist_torso": null
+  },
+  "hand_left_keypoints_2d": {
+   "found_legacy": 0.0,
+   "found_tasks": 0.0,
+   "median_dist_torso": null,
+   "p90_dist_torso": null
+  },
+  "hand_right_keypoints_2d": {
+   "found_legacy": 0.0,
+   "found_tasks": 0.0,
+   "median_dist_torso": null,
+   "p90_dist_torso": null
+  },
+  "face_points_tasks": [
+   478
+  ],
+  "face_points_legacy": [
+   468
+  ]
+ }
+}

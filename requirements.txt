@@ -8,7 +8,7 @@ speechbrain==1.0.3
 # Video Processing
 absolutely-not-scikit-video==1.1.12
 ffmpeg-python==0.2.0
-mediapipe==0.10.14
+mediapipe==1.1.1
 
 # Computer Vision
 ultralytics==8.3.212

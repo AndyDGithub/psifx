@@ -9,6 +9,7 @@ import torch
 
 from psifx.utils.command import Command, register_command
 from psifx.video.pose.mediapipe.tool import MediaPipePoseEstimationTool
+from psifx.utils.constants import MEDIAPIPE_HOLISTIC_PATH
 from psifx.video.tracking.tool import TrackingTool
 
 
@@ -82,17 +83,41 @@ class MediaPipeSingleInferenceCommand(Command):
             help="threshold for the binarization of the segmentation mask",
         )
         parser.add_argument(
+            "--model_path",
+            type=str,
+            default=MEDIAPIPE_HOLISTIC_PATH,
+            help="URL or local path of the MediaPipe Holistic Landmarker ``.task`` bundle",
+        )
+        parser.add_argument(
+            "--face_fallback",
+            default=False,
+            action=argparse.BooleanOptionalAction,
+            help="look for the face on a crop placed from the body pose when the Holistic model misses it:"
+            " more faces, but noisier ones",
+        )
+        parser.add_argument(
+            "--min_detection_confidence",
+            type=float,
+            default=0.5,
+            help="minimum score of the body and face detections that start a track",
+        )
+        parser.add_argument(
+            "--min_presence_confidence",
+            type=float,
+            default=0.5,
+            help="minimum score of the body, face and hand landmarks to keep them",
+        )
+        parser.add_argument(
             "--model_complexity",
             type=int,
-            default=2,
-            help="complexity of the model: {0, 1, 2}, higher means more FLOPs, "
-                 "but also more accurate results",
+            default=None,
+            help="ignored since the move to the MediaPipe Tasks API, which has a single Holistic model",
         )
         parser.add_argument(
             "--smooth",
-            default=True,
+            default=None,
             action=argparse.BooleanOptionalAction,
-            help="temporally smooth the inference results to reduce the jitter",
+            help="ignored since the move to the MediaPipe Tasks API, whose video mode always smooths",
         )
         parser.add_argument(
             "--device",
@@ -125,6 +150,10 @@ class MediaPipeSingleInferenceCommand(Command):
 
         def use_mediapipe(args, video_path):
             mediapipe_tool = MediaPipePoseEstimationTool(
+                model_path=args.model_path,
+                face_fallback=args.face_fallback,
+                min_detection_confidence=args.min_detection_confidence,
+                min_presence_confidence=args.min_presence_confidence,
                 model_complexity=args.model_complexity,
                 smooth=args.smooth,
                 device=args.device,
@@ -211,17 +240,41 @@ class MediaPipeMultiInferenceCommand(Command):
             help="threshold for the binarization of the segmentation mask",
         )
         parser.add_argument(
+            "--model_path",
+            type=str,
+            default=MEDIAPIPE_HOLISTIC_PATH,
+            help="URL or local path of the MediaPipe Holistic Landmarker ``.task`` bundle",
+        )
+        parser.add_argument(
+            "--face_fallback",
+            default=False,
+            action=argparse.BooleanOptionalAction,
+            help="look for the face on a crop placed from the body pose when the Holistic model misses it:"
+            " more faces, but noisier ones",
+        )
+        parser.add_argument(
+            "--min_detection_confidence",
+            type=float,
+            default=0.5,
+            help="minimum score of the body and face detections that start a track",
+        )
+        parser.add_argument(
+            "--min_presence_confidence",
+            type=float,
+            default=0.5,
+            help="minimum score of the body, face and hand landmarks to keep them",
+        )
+        parser.add_argument(
             "--model_complexity",
             type=int,
-            default=2,
-            help="complexity of the model: {0, 1, 2}, higher means more FLOPs, "
-                 "but also more accurate results",
+            default=None,
+            help="ignored since the move to the MediaPipe Tasks API, which has a single Holistic model",
         )
         parser.add_argument(
             "--smooth",
-            default=True,
+            default=None,
             action=argparse.BooleanOptionalAction,
-            help="temporally smooth the inference results to reduce the jitter",
+            help="ignored since the move to the MediaPipe Tasks API, whose video mode always smooths",
         )
         parser.add_argument(
             "--device",
@@ -278,6 +331,10 @@ class MediaPipeMultiInferenceCommand(Command):
         )
 
         mediapipe_tool = MediaPipePoseEstimationTool(
+            model_path=args.model_path,
+            face_fallback=args.face_fallback,
+            min_detection_confidence=args.min_detection_confidence,
+            min_presence_confidence=args.min_presence_confidence,
             model_complexity=args.model_complexity,
             smooth=args.smooth,
             device=args.device,
