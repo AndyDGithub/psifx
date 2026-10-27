@@ -144,8 +144,9 @@ SAM3 sur les vidéos montées (57 pistes pour 2 personnes, puis saturation de la
 par plan et une ré-identification par l'apparence : chaque personne garde désormais une seule piste. Deux outils ont
 été modernisés : la diarisation pyannote \code{community-1} estime bien mieux le nombre de locuteurs, en particulier
 dans le bruit, et fait passer le bon locuteur actif de 64,8 à 88,7\,\% sur le film ; MediaPipe passe à l'API
-\enquote{Tasks}, deux fois plus rapide. L'ensemble est rassemblé sur une branche et validé dans un environnement
-installé de zéro.
+\enquote{Tasks}, deux fois plus rapide. Enfin, SAM~3D Body, guidé par les masques SAM3, ajoute un maillage 3D
+complet de chaque personne, absent de la bibliothèque d'origine ; sur COCO, son PCK@0,05 (84,4) est proche de celui
+de l'article (86,8). L'ensemble est rassemblé sur une branche et validé dans un environnement installé de zéro.
 
 \tableofcontents
 
@@ -1366,6 +1367,128 @@ La nouvelle transcription (whisperx~3.8.7rc1) découpe les segments autrement. L
 \code{.e2e_outputs/dev_2026-10-27/}.
 
 
+\section{Maillage 3D du corps : SAM~3D Body}
+\label{sec:sam3dbody}
+
+SAM~3D Body \cite{sam3dbody2026} reconstruit à partir d'une image le maillage complet d'une personne, mains et pieds
+compris (modèle MHR, environ 18\,000 sommets), ainsi que 70 points 3D en mètres. Il accepte une boîte et un masque
+comme guides. psifx produit déjà ces masques avec SAM3 : on peut donc lui indiquer quelle personne reconstruire, sans
+détecteur supplémentaire. Le test a été fait sur la branche \code{feature/sam3d-body}, avec des scripts de recherche
+(note \code{research/10_sam3d_body.md}).
+
+\paragraph{Mise en place.}
+\begin{itemize}
+    \item \textbf{Modèle.} \code{facebook/sam-3d-body-vith} (ViT-H, 631~M de paramètres), en accès restreint et sous
+    licence SAM.
+    \item \textbf{Code.} Le dépôt de Meta, cloné hors de psifx, car ce n'est pas un paquet pip. Le détecteur (ViTDet,
+    donc detectron2) et l'estimateur de focale (MoGe) ne sont pas chargés : les boîtes et les masques viennent de
+    SAM3, et la focale vaut par défaut la diagonale de l'image.
+    \item \textbf{Sécurité.} Les poids sont chargés avec \code{torch.load(weights_only=True)} : contrairement au
+    chargeur de Meta (\code{weights_only=False}), aucun code ne peut s'exécuter à l'ouverture. Le modèle de maillage
+    est un fichier TorchScript qui n'utilise que les opérations standard de PyTorch.
+\end{itemize}
+
+\paragraph{Apport par rapport à la bibliothèque d'origine.} psifx n'avait aucune 3D du corps : le MediaPipe
+d'origine ne gardait que $x$, $y$ et la visibilité des points du corps, et seul OpenFace donnait de la 3D, pour le
+visage et le regard (tableau~\ref{tab:sam3d-upstream}).
+
+\begin{table}[H]
+\centering
+\caption{3D du corps dans psifx : bibliothèque d'origine, \code{dev} avant ce test, et SAM~3D Body.}
+\label{tab:sam3d-upstream}
+\small
+\begin{tabularx}{\textwidth}{@{}lYYY@{}}
+\toprule
+ & psifx d'origine & \code{dev} avant ce test & Avec SAM~3D Body \\
+\midrule
+Corps en 3D & aucun & 33 points MediaPipe en mètres & 70 points en mètres et maillage complet, mains et pieds
+compris \\
+Plusieurs personnes & non & oui, par les masques SAM3 & oui, une personne par masque SAM3 \\
+Autre 3D & visage et regard (OpenFace) & idem & idem \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{Sur les vidéos de bout en bout.} Une image sur 5 a été traitée, sur le GPU de 8~Go. Les maillages
+épousent les personnes en plan large comme en gros plan, derrière la table de V3, et sur la danseuse de V4 malgré la
+queue et la jupe (figure~\ref{fig:sam3d}). Faute de vérité terrain 3D sur ces vidéos, on mesure l'accord des points
+2D (réduits à COCO-17) avec RTMO sur les mêmes pistes, rapporté à la hauteur du torse (tableau~\ref{tab:sam3d-e2e}).
+Les deux modèles s'accordent à 3 à 5\,\% du torse près, sauf sur la danse. Les grands écarts viennent des membres
+cachés, par exemple la cheville sous la jambe croisée de V1.
+
+\begin{figure}[H]
+\centering
+\IfFileExists{figures/sam3d_body.jpg}{%
+\includegraphics[width=\textwidth]{figures/sam3d_body.jpg}}{\fbox{sam3d\_body.jpg introuvable}}
+\caption{Maillages SAM~3D Body projetés sur l'image, une couleur par piste SAM3 : V3 (plan large), V2 (film) et V4
+(danse).}
+\label{fig:sam3d}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{SAM~3D Body sur les pistes SAM3 : temps et accord des points 2D avec RTMO (une valeur par personne).}
+\label{tab:sam3d-e2e}
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Vidéo & Images & Par image & Écart médian (torse) & Points à moins de 0,2 torse \\
+\midrule
+V1 (une image sur 25) & 46 & 0,82~s & 0,031 & 94,8\,\% \\
+V2 film & 600 & 1,05~s & 0,032 / 0,047 & 97,3 / 96,4\,\% \\
+V3 talk-show & 1662 & 0,84~s & 0,031 / 0,040 & 98,2 / 93,2\,\% \\
+V4 danse & 230 & 0,57~s & 0,067 & 85,0\,\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Par rapport à la littérature.} L'article compare SAM~3D Body aux meilleures méthodes à partir d'une image
+(tableau~\ref{tab:sam3d-lit}). En 3D, il est au niveau de NLF et de CameraHMR sur 3DPW, et devant eux sur EMDB, une
+base hors de son domaine d'entraînement. Le seul chiffre reproductible ici est le PCK@0,05 sur COCO, avec la boîte
+annotée comme guide. Sur les 500 images de COCO val2017 déjà utilisées pour MediaPipe, on obtient 84,4, contre 86,8
+dans l'article sur tout COCO val. L'écart de 2,4 points est plausible : le sous-ensemble diffère, et la normalisation
+(ici, le plus grand côté de la boîte) peut différer un peu. Sur ces mêmes images, l'OKS vaut 0,894 et le PCK@0,2
+0,994. MediaPipe obtenait 0,331 et 0,505, mais sans boîte (section~\ref{sec:mediapipe-tasks}) : l'écart mesure aussi
+l'apport de la boîte, que SAM3 fournit dans psifx.
+
+\begin{table}[H]
+\centering
+\caption{SAM~3D Body et méthodes à partir d'une image : erreurs 3D en mm (plus bas = mieux) et PCK@0,05 sur COCO
+(plus haut = mieux). Chiffres de l'article \cite{sam3dbody2026}, sauf la dernière ligne, mesurée ici.}
+\label{tab:sam3d-lit}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+ & \multicolumn{3}{c}{3DPW} & \multicolumn{3}{c}{EMDB} & COCO \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(l){8-8}
+Méthode & PA-MPJPE & MPJPE & PVE & PA-MPJPE & MPJPE & PVE & PCK@0,05 \\
+\midrule
+HMR2.0b & 54,3 & 81,3 & 93,1 & 79,2 & 118,5 & 140,6 & 86,1 \\
+CameraHMR & 35,1 & 56,0 & 65,9 & 43,3 & 70,3 & 81,7 & 80,5 \\
+PromptHMR & 36,1 & 58,7 & 69,4 & 41,0 & 71,7 & 84,5 & 79,2 \\
+NLF-L+fit & 33,6 & 54,9 & \textbf{63,7} & 40,9 & 68,4 & 80,6 & 74,9 \\
+SAM~3D Body ViT-H & \textbf{33,2} & \textbf{54,8} & 64,1 & \textbf{38,5} & \textbf{62,9} & \textbf{74,3} & \textbf{86,8} \\
+\midrule
+Mesuré ici (500 images) & --- & --- & --- & --- & --- & --- & 84,4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Limites.}
+\begin{itemize}
+    \item \textbf{Image par image} : sans lissage temporel, le maillage peut trembler d'une image à l'autre (non
+    mesuré à une image sur 5).
+    \item \textbf{Focale par défaut} : la profondeur absolue est approximative ; la pose et la forme du corps n'en
+    dépendent pas.
+    \item \textbf{Coût} : 0,6 à 1~s par image, soit environ 20$\times$ le temps réel sur V3 si l'on traite toutes
+    les images, du même ordre que le suivi SAM3.
+    \item \textbf{Suivi} : en V3, un danseur filmé dans un encart vidéo porte le numéro de piste de l'intervieweur et
+    reçoit donc son maillage. L'erreur vient du suivi SAM3.
+    \item \textbf{Intégration} : les sorties (\code{.npz}) ne suivent pas encore le format des archives de pose
+    psifx, et la licence SAM doit être vérifiée avant toute redistribution.
+\end{itemize}
+
 \section{Veille : solutions apparues depuis le début du travail}
 \label{sec:veille}
 
@@ -1395,7 +1518,7 @@ MediaPipe~1.x & L'API \enquote{Legacy Solutions} a disparu ; Holistic, Face et P
 section~\ref{sec:mediapipe-tasks} \\
 SAM~3D Body \cite{sam3dbody2026} & Meta, CVPR~2026 : maillage 3D complet du corps, des mains et des pieds à partir
 d'une image, guidé par des points ou des masques (donc par les masques SAM3 de psifx). Image par image, 631 à 840~M
-de paramètres, accès restreint. & Branche à tester \\
+de paramètres, accès restreint. & Testé, section~\ref{sec:sam3dbody} \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1470,8 +1593,9 @@ toujours pas intégré à \code{transformers} (section~\ref{sec:veille}). Le tes
     trouve plus de locuteurs que de micros, ou avec le modèle speechbrain par défaut (section~\ref{sec:dev-run}).
     \item \textbf{Visage avec MediaPipe \enquote{Tasks}} : retrouver les visages manqués sans dégrader le signal des
     lèvres, par exemple en ne gardant que les visages assez grands et de face.
-    \item \textbf{Maillage 3D du corps} : tester SAM~3D Body \cite{sam3dbody2026}, guidé par les masques SAM3, pour
-    remplacer le squelette 3D de MediaPipe dans la vidéo reconstruite.
+    \item \textbf{Maillage 3D du corps} : SAM~3D Body (section~\ref{sec:sam3dbody}) reste à mesurer sur une vérité
+    terrain 3D (3DPW ou EMDB), à lisser dans le temps, puis à intégrer comme commande psifx écrivant les archives de
+    pose habituelles ; le maillage pourrait remplacer le squelette 3D de MediaPipe dans la vidéo reconstruite.
     \item \textbf{Robustesse au bruit et à la musique} : séparation de la voix avant transcription (option psifx),
     transcription vide plutôt qu'un plantage quand aucune parole n'est détectée, et mesure du WER sur de la parole
     bruitée.
@@ -1507,8 +1631,9 @@ les visages peu lisibles et la diarisation qui sur-découpe. La suite vise la fi
 l'association voix--personne à psifx en la rendant robuste aux erreurs de diarisation, et agir avant la diarisation
 pour le bruit fort (chapitre~\ref{chap:futur}). Les outils ont été modernisés en chemin : pyannote \code{community-1},
 qui estime bien mieux le nombre de locuteurs dans le bruit et sur les films, et MediaPipe \enquote{Tasks}, deux fois
-plus rapide. Tout est rassemblé sur \code{dev} et validé dans un environnement neuf, prêt pour une version de
-\code{main}.
+plus rapide. Enfin, SAM~3D Body, guidé par les masques SAM3, apporte un maillage 3D complet du corps, que la
+bibliothèque d'origine ne fournissait pas, avec une précision 2D proche de celle annoncée dans l'article. Tout est
+rassemblé sur \code{dev} et validé dans un environnement neuf, prêt pour une version de \code{main}.
 
 % =============================================================================
 \appendix
@@ -1543,6 +1668,7 @@ Branche & Contenu \\
 \code{feature/mediapipe-tasks} & MediaPipe \enquote{Tasks} (mergée dans \code{dev}) \\
 \code{fix/numpy-skvideo}, \code{fix/e2e-*} & Correctifs trouvés par l'environnement neuf (mergées) \\
 \code{dev-before-integration} & \code{dev} avant l'intégration du 27 octobre (sauvegarde) \\
+\code{feature/sam3d-body} & Maillage 3D SAM~3D Body sur les pistes SAM3 (mergée dans \code{dev}) \\
 \bottomrule
 \end{tabular}
 \end{table}
