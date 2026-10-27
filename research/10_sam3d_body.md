@@ -48,6 +48,44 @@ V3, du même ordre que le reste de la chaîne.
 - **Défaut de suivi, antérieur à ce test :** en V3, un danseur filmé dans un encart vidéo (image 2380) porte le
   numéro de piste de l'intervieweur, et reçoit donc son maillage. Cela vient du suivi SAM3, pas de SAM 3D Body.
 
+### 3.1 Précision sur COCO et comparaison avec l'article
+
+500 images de COCO val2017 avec une seule personne annotée, les mêmes que pour MediaPipe (note 09). SAM 3D Body
+reçoit la boîte annotée, comme dans l'article (`coco_accuracy.py`).
+
+| | OKS | PCK@0,2 (diagonale) | PCK@0,05 (plus grand côté de la boîte) | Temps par image |
+|---|---|---|---|---|
+| SAM 3D Body ViT-H, boîte annotée (nos 500 images) | **0,894** | **0,994** | **84,4** | 0,53 s |
+| MediaPipe Tasks, sans boîte (note 09) | 0,331 | 0,505 | — | 0,035 s |
+| SAM 3D Body ViT-H, article (tout COCO val) | — | — | 86,8 | — |
+| HMR2.0b, article | — | — | 86,1 | — |
+| CameraHMR, article | — | — | 80,5 | — |
+| NLF-L+fit, article | — | — | 74,9 | — |
+
+- Le PCK@0,05 retrouve celui de l'article à 2,4 points près, sur un sous-ensemble et avec une normalisation qui
+  peuvent différer un peu (plus grand côté de la boîte annotée).
+- MediaPipe doit trouver la personne lui-même : la comparaison avec lui mesure surtout l'apport de la boîte. Dans
+  psifx, cette boîte est fournie par SAM3, ce qui rend la comparaison pertinente pour la chaîne complète.
+
+### 3.2 En 3D, d'après l'article (Table 2, erreurs en mm, plus bas = mieux)
+
+| Méthode | 3DPW PA-MPJPE / MPJPE / PVE | EMDB PA-MPJPE / MPJPE / PVE |
+|---|---|---|
+| HMR2.0b | 54,3 / 81,3 / 93,1 | 79,2 / 118,5 / 140,6 |
+| CameraHMR | 35,1 / 56,0 / 65,9 | 43,3 / 70,3 / 81,7 |
+| NLF-L+fit | 33,6 / 54,9 / 63,7 | 40,9 / 68,4 / 80,6 |
+| **SAM 3D Body ViT-H** | **33,2** / 54,8 / 64,1 | **38,5** / 62,9 / 74,3 |
+
+Pas de vérité terrain 3D dans nos vidéos : ces chiffres ne sont pas reproduits ici.
+
+### 3.3 Par rapport à la bibliothèque d'origine (`upstream/`)
+
+| | psifx d'origine | `dev` avant ce test | Avec SAM 3D Body |
+|---|---|---|---|
+| Corps en 3D | aucun (MediaPipe ne garde que x, y et la visibilité) | 33 points MediaPipe en mètres | 70 points en mètres et maillage complet (≈ 18 000 sommets), mains et pieds compris |
+| Multi-personnes | non | oui, via les masques SAM3 | oui, une personne par masque SAM3 |
+| Seule autre 3D | OpenFace : visage et regard | idem | idem |
+
 ## 4. Limites
 
 - **Image par image :** aucun lissage temporel, donc le maillage peut trembler d'une image à l'autre ; non mesuré à
@@ -60,7 +98,7 @@ V3, du même ordre que le reste de la chaîne.
 
 ## 5. Suite possible
 
-1. Mesurer la précision sur une vérité terrain 3D (par exemple 3DPW ou EMDB) avant d'en faire une commande.
+1. Mesurer la précision 3D sur une vérité terrain (par exemple 3DPW ou EMDB) avant d'en faire une commande.
 2. Une commande `psifx video pose sam3d_body multi-inference --masks` qui écrive les 70 points 2D et 3D dans
    l'archive de pose habituelle, avec le maillage en option.
 3. Utiliser le maillage dans le rendu de bout en bout, à la place du panneau 3D MediaPipe.
@@ -74,6 +112,8 @@ python research/sam3d_body/run_tracks.py .e2e_outputs/dev_2026-10-27/v3_talkshow
     --repo .e2e_outputs/ext/sam-3d-body --checkpoint .e2e_outputs/ext/ckpt/sam-3d-body-vith --stride 5 --save_vertices
 python research/sam3d_body/contact_sheet.py .e2e_outputs/dev_2026-10-27/v3_talkshow --n 8
 python research/sam3d_body/compare_rtmo.py .e2e_outputs/dev_2026-10-27/v3_talkshow
+python research/sam3d_body/coco_accuracy.py .e2e_outputs/scratch/coco500 \
+    --repo .e2e_outputs/ext/sam-3d-body --checkpoint .e2e_outputs/ext/ckpt/sam-3d-body-vith
 ```
 
 ## Sources
@@ -81,3 +121,4 @@ python research/sam3d_body/compare_rtmo.py .e2e_outputs/dev_2026-10-27/v3_talksh
 - SAM 3D Body, dépôt et installation : https://github.com/facebookresearch/sam-3d-body
 - Article : https://arxiv.org/abs/2602.15989
 - Poids ViT-H : https://huggingface.co/facebook/sam-3d-body-vith
+- Table 2 de l'article (version HTML) : https://arxiv.org/html/2602.15989
