@@ -137,6 +137,9 @@ class PoseEstimationTool(VideoTool):
                 for poses, edges in decoded:
                     pose = poses[frame_idx]
                     for key, value in pose.items():
+                        # Only 2D parts ([x, y, confidence] in pixels) can be drawn on the frame.
+                        if not key.endswith("_2d"):
+                            continue
                         value = np.array(value).reshape(-1, 3)
                         points = value[..., :-1]
                         confidences = value[..., -1:]

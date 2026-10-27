@@ -1,23 +1,23 @@
 """Mediapipe's skeleton graph.'"""
 
-from mediapipe.python.solutions.holistic import (
-    PoseLandmark,
-    HandLandmark,
-    POSE_CONNECTIONS,
-    HAND_CONNECTIONS,
-    FACEMESH_TESSELATION,
+from mediapipe.tasks.python.vision import (
+    FaceLandmarksConnections,
+    HandLandmarksConnections,
+    PoseLandmarksConnections,
 )
-from mediapipe.python.solutions.face_mesh import FACEMESH_NUM_LANDMARKS
 
 
-N_POSE_LANDMARKS = len([p.value for p in PoseLandmark])
-N_FACE_LANDMARKS = FACEMESH_NUM_LANDMARKS
-N_LEFT_HAND_LANDMARKS = len([p.value for p in HandLandmark])
-N_RIGHT_HAND_LANDMARKS = len([p.value for p in HandLandmark])
+def _edges(connections) -> tuple:
+    return tuple((c.start, c.end) for c in connections)
 
-POSE_EDGES = tuple(POSE_CONNECTIONS)
-FACE_EDGES = tuple(FACEMESH_TESSELATION)
-# FACE_EDGES = tuple(FACEMESH_CONTOURS)
-# FACE_EDGES = tuple(FACEMESH_TESSELATION) + tuple(FACEMESH_CONTOURS)
-LEFT_HAND_EDGES = tuple(HAND_CONNECTIONS)
-RIGHT_HAND_EDGES = tuple(HAND_CONNECTIONS)
+
+N_POSE_LANDMARKS = 33
+# 468 mesh points plus 10 iris points.
+N_FACE_LANDMARKS = 478
+N_LEFT_HAND_LANDMARKS = 21
+N_RIGHT_HAND_LANDMARKS = 21
+
+POSE_EDGES = _edges(PoseLandmarksConnections.POSE_LANDMARKS)
+FACE_EDGES = _edges(FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION)
+LEFT_HAND_EDGES = _edges(HandLandmarksConnections.HAND_CONNECTIONS)
+RIGHT_HAND_EDGES = _edges(HandLandmarksConnections.HAND_CONNECTIONS)

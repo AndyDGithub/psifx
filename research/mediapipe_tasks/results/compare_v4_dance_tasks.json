@@ -1,0 +1,36 @@
+{
+ "0.tar.gz": {
+  "frames": 1146,
+  "pose_keypoints_2d": {
+   "found_legacy": 0.935,
+   "found_tasks": 0.964,
+   "median_dist_torso": 0.152,
+   "p90_dist_torso": 0.392
+  },
+  "face_keypoints_2d": {
+   "found_legacy": 0.169,
+   "found_tasks": 0.069,
+   "median_dist_torso": 0.017,
+   "p90_dist_torso": 0.114
+  },
+  "hand_left_keypoints_2d": {
+   "found_legacy": 0.327,
+   "found_tasks": 0.191,
+   "median_dist_torso": 0.012,
+   "p90_dist_torso": 2.522
+  },
+  "hand_right_keypoints_2d": {
+   "found_legacy": 0.314,
+   "found_tasks": 0.235,
+   "median_dist_torso": 0.014,
+   "p90_dist_torso": 2.376
+  },
+  "face_points_tasks": [
+   478
+  ],
+  "face_points_legacy": [
+   468,
+   478
+  ]
+ }
+}

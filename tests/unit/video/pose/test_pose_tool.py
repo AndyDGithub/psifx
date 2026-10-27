@@ -75,7 +75,8 @@ def mediapipe_tool():
 
 
 def fake_landmarks(points):
-    return SimpleNamespace(landmark=[SimpleNamespace(x=x, y=y, visibility=v) for x, y, v in points])
+    # The Tasks API returns plain lists of landmarks; face and hand landmarks have no visibility.
+    return [SimpleNamespace(x=x, y=y, z=0.0, visibility=v) for x, y, v in points]
 
 
 @pytest.mark.unit
@@ -86,14 +87,75 @@ def test_mediapipe_process_part_scales_to_pixels(mediapipe_tool):
 
 @pytest.mark.unit
 def test_mediapipe_process_part_missing_is_zeros(mediapipe_tool):
-    assert mediapipe_tool.process_part(None, size=(10, 10), n_points=4) == [0.0] * 12
+    assert mediapipe_tool.process_part([], size=(10, 10), n_points=4) == [0.0] * 12
+
+
+@pytest.mark.unit
+def test_mediapipe_process_part_without_visibility_is_zero_confidence(mediapipe_tool):
+    out = mediapipe_tool.process_part(fake_landmarks([(0.5, 0.5, None)]), size=(11, 11), n_points=1)
+    assert out == [5.0, 5.0, 0.0]
+
+
+@pytest.mark.unit
+def test_mediapipe_process_world_keeps_meters(mediapipe_tool):
+    landmarks = [SimpleNamespace(x=0.1, y=-0.4, z=0.05, visibility=0.8)]
+    np.testing.assert_allclose(mediapipe_tool.process_world(landmarks, n_points=1), [0.1, -0.4, 0.05, 0.8], rtol=1e-6)
+    assert mediapipe_tool.process_world([], n_points=2) == [0.0] * 8
 
 
 @pytest.mark.unit
 def test_mediapipe_process_pose_has_all_parts(mediapipe_tool):
     from psifx.video.pose.mediapipe import skeleton
 
-    results = SimpleNamespace(pose_landmarks=None, face_landmarks=None, left_hand_landmarks=None, right_hand_landmarks=None)
+    results = SimpleNamespace(pose_landmarks=[], face_landmarks=[], left_hand_landmarks=[], right_hand_landmarks=[],
+                              pose_world_landmarks=[])
     pose = mediapipe_tool.process_pose(results, size=(10, 10))
-    assert set(pose) == {"pose_keypoints_2d", "face_keypoints_2d", "hand_left_keypoints_2d", "hand_right_keypoints_2d"}
+    assert set(pose) == {"pose_keypoints_2d", "face_keypoints_2d", "hand_left_keypoints_2d", "hand_right_keypoints_2d",
+                         "pose_keypoints_3d"}
     assert len(pose["pose_keypoints_2d"]) == skeleton.N_POSE_LANDMARKS * 3
+    assert len(pose["face_keypoints_2d"]) == skeleton.N_FACE_LANDMARKS * 3
+    assert len(pose["pose_keypoints_3d"]) == skeleton.N_POSE_LANDMARKS * 4
+
+
+@pytest.mark.unit
+def test_holistic_model_path_rejects_missing_local_file(tmp_path):
+    pytest.importorskip("mediapipe", reason="Mediapipe not installed")
+    from psifx.video.pose.mediapipe.tool import bundle_path
+
+    with pytest.raises(FileNotFoundError):
+        bundle_path(str(tmp_path / "missing.task"))
+    bundle = tmp_path / "model.task"
+    bundle.write_bytes(b"x")
+    assert bundle_path(str(bundle)) == bundle
+
+
+@pytest.mark.unit
+def test_holistic_model_download_checks_the_checksum(tmp_path, monkeypatch):
+    pytest.importorskip("mediapipe", reason="Mediapipe not installed")
+    from psifx.video.pose.mediapipe import tool
+
+    monkeypatch.setattr(tool.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(tool.urllib.request, "urlretrieve", lambda url, path: Path(path).write_bytes(b"corrupted"))
+    with pytest.raises(RuntimeError, match="checksum"):
+        tool.bundle_path()
+    assert not any((tmp_path / ".cache" / "psifx" / "mediapipe").iterdir())
+
+
+@pytest.mark.unit
+def test_face_fallback_head_box_maps_back_to_the_frame():
+    pytest.importorskip("mediapipe", reason="Mediapipe not installed")
+    from psifx.video.pose.mediapipe.face_fallback import CROP_SIZE, FaceCropFallback
+
+    # Head points spread over 20 x 10 px around (100, 50) in a 200 x 100 frame.
+    pose = [SimpleNamespace(x=(90 + 20 * (k % 2)) / 200, y=(45 + 10 * (k % 2)) / 100) for k in range(33)]
+    center, side = FaceCropFallback.head_box(pose, 200, 100)
+    np.testing.assert_allclose(center, [100, 50], atol=1.0)
+    assert side == pytest.approx(60.0)
+
+    # A landmark at the crop center lands back on the head center.
+    fallback = FaceCropFallback.__new__(FaceCropFallback)
+    point = SimpleNamespace(x=0.5, y=0.5)
+    fallback.model = SimpleNamespace(detect_for_video=lambda image, t: SimpleNamespace(face_landmarks=[[point]]))
+    out = fallback.detect(np.zeros((100, 200, 3), np.uint8), pose, 0)
+    assert out[0].x == pytest.approx(center[0] / 200) and out[0].y == pytest.approx(center[1] / 100)
+    assert CROP_SIZE == 256
