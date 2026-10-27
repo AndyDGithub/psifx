@@ -31,6 +31,7 @@
 \usepackage{float}
 \usepackage{caption}
 \usepackage{microtype}
+\DisableLigatures[-]{encoding=T1,family=tt*} % keep "--option" as two hyphens in \code
 \usepackage[hidelinks]{hyperref}
 \setlength{\emergencystretch}{3em}
 
@@ -133,6 +134,15 @@ révélé à la fois plus lent et nettement moins précis sur ce matériel. Le p
 DETRPose, le modèle lui-même ne représente qu'une minorité du temps : les vrais leviers sont le détecteur, le
 prétraitement et, pour DETRPose, le pont entre environnements Python.
 
+Une seconde phase a approfondi ces résultats et testé psifx de bout en bout. L'écart de ViTPose s'explique par le
+détecteur et n'est pas significatif ; l'échec de l'INT8 vient d'une erreur cumulée dans le modèle de pose et de
+convolutions que l'activation SiLU empêche de fusionner. RTMO et ViTPose sont réunis dans une seule commande, et un
+test sur toute la partie test d'OCHuman complète le test COCO. Sur quatre vidéos réelles (conversation, film,
+talk-show monté, danse), psifx produit des poses, une transcription et des sous-titres attribués à chaque personne,
+réutilisés pour reconstruire une vidéo avec squelettes 2D et 3D. Ce test a fait apparaître une faiblesse du suivi
+SAM3 sur les vidéos montées (57 pistes pour 2 personnes, puis saturation de la mémoire), corrigée par une session
+par plan et une ré-identification par l'apparence : chaque personne garde désormais une seule piste.
+
 \tableofcontents
 
 % =============================================================================
@@ -178,8 +188,9 @@ c'est le cœur de ce rapport.
 Le chapitre~\ref{chap:sota} présente l'état de l'art. Le chapitre~\ref{chap:problematique} formule la
 problématique et les objectifs. Le chapitre~\ref{chap:methodo} décrit la méthodologie : banc de mesure,
 intégration dans psifx, tests et protocole d'optimisation. Le chapitre~\ref{chap:resultats} présente les
-résultats, discutés au chapitre~\ref{chap:discussion}. Le chapitre~\ref{chap:futur} liste les pistes non encore
-testées, avant la conclusion.
+résultats, discutés au chapitre~\ref{chap:discussion}. Le chapitre~\ref{chap:phase2} couvre la seconde phase :
+les approfondissements demandés à la réunion du 13 octobre, le test de bout en bout et la correction du suivi SAM3.
+Le chapitre~\ref{chap:futur} liste les pistes non encore testées, avant la conclusion.
 
 % =============================================================================
 \chapter{État de l'art}
@@ -806,6 +817,431 @@ Plusieurs écueils rencontrés valent d'être notés, car ils faussent silencieu
 \end{itemize}
 
 % =============================================================================
+\chapter{Approfondissements et test de bout en bout}
+\label{chap:phase2}
+% =============================================================================
+
+Ce chapitre couvre la phase qui a suivi la réunion de suivi du 13 octobre 2026 : les quatre demandes faites à cette
+réunion, puis un test de bout en bout de psifx sur des vidéos réelles, et la correction du suivi SAM3 que ce test a
+rendue nécessaire. Il se termine par une veille des solutions apparues depuis le début du travail.
+
+\section{Suites de la réunion du 13 octobre}
+\label{sec:phase2-reunion}
+
+\subsection{Pourquoi ViTPose est moins bon que prévu}
+
+Dans psifx, ViTPose-B obtient 0,850 d'OKS, sous RTMPose-m (0,873), alors que le banc de recherche lui donnait 0,890.
+L'analyse (branche \code{analysis/vitpose-gap}) mesure chaque facteur séparément (tableau~\ref{tab:vitpose-gap}),
+avec des intervalles de confiance à 95\,\% par bootstrap apparié.
+\begin{itemize}
+    \item \textbf{La littérature ne prédit pas d'avantage net à taille égale} : 75,5 AP pour ViTPose-B (COCO seul)
+    contre 74,9 pour RTMPose-m \cite{xu2022vitpose,jiang2023rtmpose}. La réputation de ViTPose vient de ses grandes
+    variantes.
+    \item \textbf{Le banc de recherche n'était pas à armes égales} : ViTPose y recevait les boîtes de la vérité
+    terrain. À boîtes égales, les deux modèles sont à égalité.
+    \item \textbf{L'écart observé dans psifx n'est pas significatif} sur 50 images (différence $-0{,}022$, IC
+    $[-0{,}066\,;\,+0{,}008]$). Le détecteur coûte environ 0,036 d'OKS à ViTPose.
+    \item \textbf{Leviers} : une variante plus grande (ViTPose++ L, +0,02 avec boîtes parfaites), le \emph{flip test}
+    (+0,006, faible mais significatif) et un meilleur choix de la personne suivie.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{OKS moyen sur 50 images COCO selon la source des boîtes.}
+\label{tab:vitpose-gap}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Boîtes & ViTPose-B & RTMPose-m \\
+\midrule
+Vérité terrain (pose seule) & 0,889 & 0,896 \\
+YOLOX, bonne personne & 0,849 & 0,858 \\
+RT-DETR, bonne personne & 0,862 & 0,859 \\
+Réglage psifx (vidéo, détecteur propre, plus grande boîte) & 0,850 & 0,873 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Cause de l'échec de l'INT8}
+
+L'analyse (branche \code{analysis/int8-root-cause}, RTMPose sur CPU) explique les deux symptômes de la
+section~\ref{sec:res-optim}.
+\begin{itemize}
+    \item \textbf{Précision} : toute la perte vient du modèle de pose. Le détecteur quantifié seul garde son OKS
+    (0,856 contre 0,858), le modèle de pose seul tombe à 0,664. Ce n'est pas la calibration : trois méthodes donnent
+    le même résultat, et calibrer sur les images évaluées fait même pire. Le rapport signal/bruit des activations
+    reste vers 21\,dB dans la première moitié du réseau, puis tombe à 2,7\,dB aux trois quarts : l'erreur est
+    répartie et cumulative, et la tête SimCC, qui demande une résolution fine, ne la supporte pas. Garder en float
+    les 20 couches les plus sensibles ne remonte qu'à 0,690.
+    \item \textbf{Vitesse} : 57 des 62 convolutions alimentent une activation SiLU qui lit leur sortie deux fois.
+    ONNX Runtime ne forme alors jamais le motif qu'il remplace par une convolution entière : seules 4 convolutions
+    deviennent \code{QLinearConv}, les autres restent en float, entourées de 450 conversions. Le modèle de pose passe
+    de 13,6 à 34,2\,ms.
+    \item \textbf{Conséquence} : la décision de retirer l'INT8 est confirmée. Seuls un ré-entraînement avec
+    quantification simulée (QAT) ou un moteur qui fusionne Conv et SiLU en INT8 (TensorRT) pourraient changer ce
+    constat \cite{ort_quantization,ort_tensorrt}.
+\end{itemize}
+
+\subsection{Une seule commande pour RTMO et ViTPose}
+
+\code{psifx video pose body} (branche \code{feature/pose-body-command}) regroupe les deux modèles retenus :
+RTMO par défaut, ViTPose avec \code{--model vitpose}. Les deux outils sous-jacents restent inchangés ; la commande
+ne fait que choisir l'un ou l'autre, avec les mêmes sorties que \code{mediapipe}, y compris en multi-personnes
+(\code{multi-inference} sur les masques SAM3).
+
+\subsection{Test de précision sur un jeu complet : OCHuman}
+
+Les 8 images COCO du test de non-régression sont connues des modèles et trop peu nombreuses : des écarts de 0,01 à
+0,02 y sont du bruit. Un test d'intégration sur toute la partie test d'OCHuman \cite{zhang2019pose2seg} (2231
+images de personnes occultées, branche \code{feature/tests-ochuman}) le complète. Il calcule l'AP COCO avec
+\code{pycocotools} et ne tourne qu'à la demande (marqueur \code{dataset}, variable \code{OCHUMAN_ROOT}).
+\begin{itemize}
+    \item AP mesurés : RTMO-m 0,289, ViTPose-B 0,343. Seuils du test fixés environ 3 points en dessous (0,26 et
+    0,31).
+    \item Ces AP sont bas par construction : OCHuman n'annote pas toutes les personnes, donc une détection correcte
+    d'une personne non annotée compte comme faux positif ; et les personnes très occultées échappent souvent aux
+    détecteurs. Le test sert à détecter une régression, pas à situer les modèles dans la littérature.
+\end{itemize}
+
+\section{Test de bout en bout}
+\label{sec:e2e}
+
+\subsection{Objectif et chaîne testée}
+
+Les chapitres précédents mesurent la pose sur des images. Ce test vérifie que psifx transforme des vidéos réelles
+et variées en données exploitables, puis le montre par un usage concret : reconstruire une vidéo où chaque personne
+est un squelette 2D d'une couleur fixe, avec un panneau 3D simple et des sous-titres de la couleur de la personne
+qui parle. Les scripts sont dans \nolinkurl{research/e2e/} (branche \code{experiment/e2e-demo}). Chaque étape est une
+commande psifx ou un script de recherche, chronométrée, et la chaîne s'arrête à la première erreur
+(tableau~\ref{tab:e2e-chaine}).
+
+\begin{table}[H]
+\centering
+\caption{Chaîne de bout en bout.}
+\label{tab:e2e-chaine}
+\small
+\begin{tabularx}{\textwidth}{@{}lY@{}}
+\toprule
+Étape & Outil \\
+\midrule
+Suivi des personnes & \code{psifx video tracking sam3 inference} (un masque par personne) \\
+Poses & \code{psifx video pose body} (RTMO), \code{psifx video pose mediapipe} (visage, mains, et nouvelle clé
+\code{pose_keypoints_3d} : points 3D du corps en mètres) \\
+Audio & extraction, conversion, normalisation psifx ; séparation de la voix par Demucs \cite{rouard2023htdemucs} pour la musique \\
+Qui parle quand & \code{psifx audio diarization pyannote} (\code{speaker-diarization-3.1} \cite{pyannote31}) \\
+Transcription & \code{psifx audio transcription whisperx} (\code{large-v3-turbo}, multilingue) \cite{bain2023whisperx} \\
+Voix $\leftrightarrow$ personne & script de recherche : mouvement des lèvres (MediaPipe) et présence à l'écran,
+corrélés aux tours de parole ; affectation hongroise, sinon \enquote{hors champ} \\
+Sous-titres attribués & \code{psifx audio transcription enhance}, avec l'association précédente \\
+Re-rendu et mesures & scripts de recherche : vidéo avec squelettes, panneau 3D et sous-titres colorés, fichier
+\code{.ass}, métriques \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+psifx ne relie une voix à une personne visible que si chacune porte un micro (\code{audio identification}). Le
+script d'association par les lèvres comble ce manque sans matériel : il sort le même format, donc
+\code{transcription enhance} l'utilise sans changement.
+
+\subsection{Vidéos}
+
+\begin{table}[H]
+\centering
+\caption{Vidéos du test, de la plus simple à la plus difficile.}
+\label{tab:e2e-videos}
+\small
+\begin{tabularx}{\textwidth}{@{}lrYY@{}}
+\toprule
+Vidéo & Durée & Difficulté & Vérité terrain \\
+\midrule
+V1 \code{Video.mp4} (exemple psifx) & 46\,s & 1 personne visible, 1 voix hors champ & 1 micro par personne (stéréo) \\
+V2 AVA-ActiveSpeaker \cite{roth2020ava} & 2\,min & 2 personnes, espagnol, plan fixe & visages annotés \enquote{parle / ne parle pas} \\
+V3 talk-show (Konbini) & 5,5\,min & français, 2 personnes, 112 changements de plan, incrustations & aucune \\
+V4 \emph{short} de danse & 48\,s & personnage animé avec une queue, mouvements rapides, voix sous la musique & paroles (WER) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Le corpus AMI, prévu au départ pour les réunions, n'a pas pu être utilisé : son site refuse les connexions et ses
+copies vidéo sur Hugging Face ont disparu. AVA-ActiveSpeaker le remplace pour mesurer l'association voix--personne.
+
+\subsection{Résultats}
+
+\begin{table}[H]
+\centering
+\caption{Résultats par vidéo. Facteur temps réel : temps de calcul total divisé par la durée de la vidéo.}
+\label{tab:e2e-resultats}
+\small
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+& & \multicolumn{2}{c}{Poses trouvées} & Voix & Texte sur une & Facteur \\
+\cmidrule(lr){3-4}
+Vidéo & Pistes & RTMO & MediaPipe & diarisées & personne visible & temps réel \\
+\midrule
+V1 & 1 & 100\,\% & 100\,\% & 2 & 49\,\% & 21,3$\times$ \\
+V2 & 2 & 97--100\,\% & 100\,\% & 4 & 76\,\% & 24,5$\times$ \\
+V3 & 3 (sur 18) & 63--70\,\%$^*$ & 63--71\,\%$^*$ & 3 & 100\,\% & 27,8$\times$ \\
+V4 & 1 & 87\,\% & 94\,\% & 1 & 0\,\% & 18,3$\times$ \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+\footnotesize $^*$ Part de toutes les images ; à cause du montage, les deux personnes ne sont à l'écran que sur 64 et
+72\,\% des images, et une pose est trouvée sur 98\,\% des images où elles le sont.
+\end{table}
+
+\begin{itemize}
+    \item \textbf{Association voix--personne}. V1 : 100\,\% d'accord avec les micros ; la voix hors champ est bien
+    classée hors champ. V2 : sur 1784 instants où quelqu'un parle, la personne désignée est la bonne dans 65\,\% des
+    cas, contre 52\,\% par hasard. L'association ne répond que pour 72\,\% de ces instants, mais a raison à 90\,\%
+    quand elle répond. Les non-réponses viennent de la diarisation, qui trouve 4 voix pour 2 personnes.
+    V3 : sans vérité terrain, 40 segments de transcription ont été étiquetés d'après le texte seul quand il ne laisse
+    aucun doute (questions de l'intervieweur, invitée parlant d'elle au féminin). Avec les lèvres seules, 59\,\% du
+    temps de ces segments était attribué à la bonne personne : la voix de l'intervieweur partait \enquote{hors
+    champ}, car ses lèvres, derrière une barbe et un micro, bougent à peine plus quand il parle. Un second terme
+    corrige ce cas : dans une vidéo montée, la réalisation montre le plus souvent la personne qui parle. Le score
+    ajoute donc la part du temps de parole où la personne est à l'écran, moins cette part pendant que les autres
+    parlent. Ce terme est nul pour une caméra fixe où tout le monde reste visible : V1, V2 et V4 sont inchangés, et V3
+    passe à 98\,\% (39 segments sur 40). Le lien de l'intervieweur reste juste au-dessus du seuil (score 0,26 pour
+    un seuil de 0,2).
+    \item \textbf{Transcription sous la musique (V4)}. Sans séparation de la voix, WhisperX ne détecte aucune parole et
+    plante. Avec Demucs, le WER vaut 0,58 ; une seule expression du refrain mal entendue en coûte environ 15 points.
+    \item \textbf{Coût}. Le suivi SAM3 domine (13 à 19$\times$ le temps réel sur la RTX 4060, davantage quand la
+    vidéo est montée), devant MediaPipe sur CPU (2 à 5$\times$). Une heure de vidéo demanderait de 13 à 19\,h de suivi
+    sur ce portable.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\IfFileExists{figures/e2e_v3_frame.jpg}{%
+\includegraphics[width=\textwidth]{figures/e2e_v3_frame.jpg}}{\fbox{e2e\_v3\_frame.jpg introuvable}}
+\caption{Image de la vidéo reconstruite pour V3 : squelettes 2D d'une couleur par personne, vignette de l'original
+et panneau 3D à droite, sous-titre de la couleur de la personne qui parle.}
+\label{fig:e2e-v3}
+\end{figure}
+
+\subsection{Limites observées}
+
+\begin{itemize}
+    \item \textbf{Visage non humain} (V4) : MediaPipe ne trouve le visage animé que sur 7\,\% du temps chanté ; sans
+    lèvres, pas d'association. Le corps est bien suivi, la queue est ignorée (absente des squelettes).
+    \item \textbf{Sur-découpage de la diarisation} : plusieurs voix pour une même personne, que l'association rattache
+    quand le score le permet.
+    \item \textbf{Granularité de \code{enhance}} : chaque segment de transcription reçoit un seul locuteur ; une
+    réplique rapide à l'intérieur d'un segment prend la couleur de l'autre personne.
+    \item \textbf{Montage} (V3) : le suivi SAM3 ne supportait pas les changements de plan
+    (section~\ref{sec:sam3-plans}). Le filtre de présence garde aussi une piste qui n'est pas une personne : une
+    main en très gros plan, dans un plan qui revient sur 15\,\% de la vidéo.
+    \item \textbf{Lèvres peu lisibles} (V3) : barbe et micro devant la bouche ; compensé ici par la présence à
+    l'écran, qui ne servirait à rien sur un plan fixe.
+\end{itemize}
+
+Le test a aussi révélé quatre défauts de psifx, contournés dans les scripts : le modèle d'identification par défaut
+(speechbrain) ne se charge plus avec un \code{huggingface_hub} récent ; WhisperX plante au lieu de rendre une
+transcription vide quand il ne détecte aucune parole ; l'option \code{--language} de la transcription n'est jamais
+transmise ; MediaPipe écrit 468 points de visage quand il n'en trouve pas, mais 478 sinon.
+
+\section{Suivi SAM3 à travers les changements de plan}
+\label{sec:sam3-plans}
+
+\subsection{Le problème}
+
+Sur le talk-show, le suivi a atteint 57 pistes pour 2 personnes, puis a saturé la mémoire de l'ordinateur. Deux
+mécanismes sont en cause.
+\begin{itemize}
+    \item \textbf{Identités perdues ou échangées au changement de plan}. psifx découpe la vidéo en paquets et relie les
+    identités d'un paquet au suivant par le recouvrement des masques. Après une coupe, les masques ne se recouvrent
+    plus : chaque personne reçoit un nouvel identifiant. Pire, quand deux gros plans alternent au même endroit de
+    l'image, la mémoire de SAM3 et le recouvrement font passer l'identité d'une personne à l'autre. Sur la première
+    minute, 16 pistes, dont 4 mélangent les deux personnes.
+    \item \textbf{Un encodeur vidéo par piste}. Chaque piste garde un encodeur x264 ouvert jusqu'à la fin, en 1080p et
+    sans perte : environ 800\,Mo de RAM chacun, 43\,Go pour les 58 pistes.
+\end{itemize}
+La littérature confirme que SAM2 et SAM3 perdent les objets aux changements de scène et que leur mémoire ne règle pas
+les ambiguïtés d'identité \cite{pvuw2026reprompt}. Les travaux sur les séries télévisées découpent la vidéo en plans
+et relient ensuite les personnes d'un plan à l'autre par l'apparence ou la géométrie
+\cite{pavlakos2022tvshows,multithumbs2026}.
+
+\subsection{La correction}
+
+La correction (branche \code{fix/sam3-shot-changes}, mergée dans \code{dev}) suit ce schéma.
+\begin{enumerate}
+    \item \textbf{Détection des coupes} : différence moyenne entre deux vignettes consécutives de 64$\times$36 pixels,
+    au-dessus de 0,15 et nettement au-dessus du mouvement récent. Sur la première minute du talk-show, elle retrouve
+    les 30 coupes détectées par \code{ffmpeg}, plus 3 animations, et ne déclenche aucune fausse coupe sur V1, V2 et
+    la danse.
+    \item \textbf{Une session SAM3 par plan} : aucune identité n'est transmise à travers une coupe.
+    \item \textbf{Ré-identification par l'apparence} : chaque nouvelle piste reçoit l'identifiant de la personne la plus
+    semblable déjà vue, si la similarité cosinus dépasse 0,45, sinon un nouvel identifiant. L'apparence est un
+    plongement DINOv2-small \cite{oquab2023dinov2} de la personne découpée par son masque, fond grisé. Deux pistes
+    visibles dans la même image ne peuvent pas recevoir le même identifiant. Avec \code{--max_num_objects}, une fois
+    la limite atteinte, la nouvelle piste prend l'identifiant le plus proche au lieu d'être abandonnée.
+    \item \textbf{Mémoire} : les encodeurs passent en \code{-tune zerolatency}, qui supprime le tampon d'anticipation
+    de x264 \cite{x264_memory} : 813 à 170\,Mo par encodeur, toujours sans perte.
+    \item \textbf{Post-traitement de SAM3} : sans le paquet optionnel \code{kernels}, \code{transformers} saute la
+    suppression des détections en double (NMS) et le remplissage des trous des masques \cite{hf_kernels}. Ce paquet
+    télécharge du code compilé depuis le Hub à l'exécution ; psifx fournit donc ses propres versions de ces deux
+    opérations, en PyTorch et SciPy.
+\end{enumerate}
+
+\subsection{Mesures}
+
+Le descripteur d'apparence a été choisi sur 41 segments (une piste dans un plan) étiquetés à la main. DINOv2 sépare
+bien mieux les deux personnes qu'un histogramme de couleurs (tableau~\ref{tab:reid}), ce qui rejoint les études
+récentes sur la ré-identification sans entraînement spécifique \cite{reid2026survey}. Simulée en ligne, dans l'ordre
+du temps, l'attribution regroupe les 41 segments en 5 identités sans aucune erreur : les 2 personnes, et 3
+identités pour les incrustations graphiques.
+
+\begin{table}[H]
+\centering
+\caption{Choix du descripteur : 41 segments de la première minute de V3. AUC : probabilité qu'une paire de la même
+personne soit plus semblable qu'une paire de personnes différentes.}
+\label{tab:reid}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Descripteur & AUC & Meilleure exactitude par paire \\
+\midrule
+Histogramme teinte--saturation des pixels du masque & 0,708 & 0,710 \\
+DINOv2-small (classe, moyenne de 8 vues) & \textbf{0,966} & \textbf{0,913} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Suivi SAM3 sur la première minute de V3 (1502 images, 2 personnes, 30 coupes).}
+\label{tab:sam3-plans}
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Version & Pistes & Pistes mélangeant les 2 personnes & Temps \\
+\midrule
+Avant & 16 & 4 & 1143\,s \\
+NMS seule & 16 & -- & 1162\,s \\
+\textbf{Coupes + ré-identification + NMS} & \textbf{9} & \textbf{0} & \textbf{1032\,s} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Avec la correction, chaque personne tient en une seule piste continue sur les 33 plans. Les 7 autres pistes sont des
+incrustations (logo, photo de l'invitée dans le générique), une main en très gros plan et des fragments de quelques
+images ; le pipeline de bout en bout les écarte avant l'estimation de pose s'ils sont présents sur moins de 5\,\% de
+la vidéo. La NMS seule ne change pas le nombre de pistes : le problème venait bien des coupes. Sur V1, sans coupe,
+le résultat ne change pas (1 piste, IoU moyenne de 0,974 avec les anciens masques, différences dues au remplissage
+des trous), pour 7\,\% de temps en plus.
+
+Sur la vidéo complète de V3 (8319 images, 113 plans détectés), le suivi donne 18 pistes, contre plus de 57 à 76\,\%
+de la vidéo avant la correction, et la mémoire reste stable. Chacune des deux personnes tient en une seule piste
+pure sur les 5,5 minutes. Les 15 autres pistes sont présentes sur moins de 2,5\,\% des images, sauf la main en gros
+plan (15\,\%). Le suivi prend 6192\,s, soit 18,6$\times$ le temps réel.
+
+\section{Diarisation : pyannote \code{community-1}}
+\label{sec:community1}
+
+pyannote a publié en 2025 le pipeline \code{community-1} \cite{pyannote_community1}, qui demande
+\code{pyannote.audio}~4. Il a été comparé à la \code{3.1} sur sa propre branche
+(\code{feature/diarization-community-1}, note \code{research/08_diarization_community1.md}).
+
+\paragraph{Adaptation de psifx.} Le code accepte désormais pyannote~3 et~4 :
+\begin{itemize}
+    \item le jeton s'appelle \code{token} au lieu de \code{use_auth_token} ;
+    \item la sortie est un \code{DiarizeOutput} ;
+    \item trois options sont ajoutées : \code{--min_speakers}, \code{--max_speakers} et \code{--exclusive} (un seul
+    locuteur à la fois) ;
+    \item le modèle par défaut est \code{community-1} sous pyannote~4.
+\end{itemize}
+pyannote~4 envoie par défaut à pyannoteAI le nom du modèle et la durée de chaque audio. psifx désactive cette
+télémétrie.
+
+\paragraph{Protocole.} Deux références ont été construites :
+\begin{itemize}
+    \item V1 : une pseudo-référence tirée des deux micros (le micro dominant d'au moins 6\,dB) ;
+    \item V3 : les 40 segments étiquetés d'après le texte.
+\end{itemize}
+V1 a été mélangée à trois bruits, à 10, 5 et 0\,dB de RSB : un bruit rose, la musique de V4 (voix chantée
+comprise) et un brouhaha (trois copies décalées du talk-show). Le cas réaliste est celui où le nombre de
+locuteurs n'est pas donné au modèle.
+
+\begin{table}[H]
+\centering
+\caption{Diarisation \code{3.1} contre \code{community-1}, nombre de locuteurs estimé par le modèle. DER avec un
+collar de 0,25\,s ; entre parenthèses, le nombre de locuteurs trouvés (2 attendus sur V1).}
+\label{tab:community1}
+\small
+\begin{tabular}{@{}llrr@{}}
+\toprule
+Cas & Mesure & \code{3.1} & \code{community-1} \\
+\midrule
+V2 AVA (film) & bon locuteur actif (vérité AVA) & 64,8\,\% & \textbf{88,8\,\%} \\
+V3 talk-show & DER (segments étiquetés) & 11,4\,\% & 11,6\,\% \\
+V3 talk-show & attribution des sous-titres & 97,7\,\% & 97,7\,\% \\
+V1, bruit rose 10\,dB & DER & 38,7\,\% (4) & \textbf{12,0\,\% (2)} \\
+V1, bruit rose 0\,dB & DER & 56,2\,\% (1) & 56,2\,\% (1) \\
+V1, musique 10\,dB & DER & 48,2\,\% (4) & \textbf{20,8\,\% (2)} \\
+V1, brouhaha 10\,dB & DER & 44,2\,\% (4) & \textbf{28,8\,\% (2)} \\
+V1, brouhaha 0\,dB & DER & 77,4\,\% (4) & \textbf{45,5\,\% (2)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Résultats.} \code{community-1} est meilleur ou égal partout (tableau~\ref{tab:community1}), pour le même
+temps de calcul (15,5\,s contre 14,4\,s pour les 330\,s de V3) :
+\begin{itemize}
+    \item \textbf{Nombre de locuteurs.} Le gain vient de son estimation : dans le bruit, la \code{3.1} trouve 3 à 5
+    locuteurs pour 2 personnes dans 6 cas sur 9, \code{community-1} en trouve 2 dans 8 cas sur 9.
+    \item \textbf{Film (V2).} Les locuteurs en trop de la \code{3.1} partaient \enquote{hors champ} et leurs
+    sous-titres perdaient leur couleur : le bon locuteur actif passe de 64,8 à 88,8\,\% des instants annotés.
+    \item \textbf{Détection de parole.} Elle est identique pour les deux : à 0\,dB de bruit rose, 52\,\% de la parole
+    est perdue. La robustesse au bruit fort se jouera donc avant la diarisation (séparation ou rehaussement de la
+    voix).
+    \item \textbf{Une limite.} Avec le brouhaha à 5\,dB, \code{community-1} trouve 2 locuteurs mais mélange les deux
+    voix réelles.
+\end{itemize}
+
+\paragraph{Ce qui bloque la fusion.} Le blocage est dans les dépendances, pas dans le modèle :
+\begin{itemize}
+    \item \textbf{whisperx.} pyannote~4 impose whisperx~3.8 ; seule la pré-version \code{3.8.7rc1} accepte
+    huggingface-hub~1.x \cite{whisperx_pr1375}, que demande transformers~5 (SAM3).
+    \item \textbf{protobuf.} La télémétrie de pyannote~4 déclare protobuf~$\geq$~5. mediapipe~0.10.14 exige au
+    contraire protobuf~$<$~5, et plante réellement avec la version~5.
+    \item \textbf{mediapipe.} Les versions récentes de mediapipe n'ont plus l'API \enquote{Solutions} utilisée par
+    psifx \cite{mediapipe_legacy}.
+\end{itemize}
+Avec protobuf~4.25 et la télémétrie coupée, tout fonctionne : les poses MediaPipe sont identiques au bit près, et la
+transcription a le même texte avec des horodatages décalés de 0,02 à 0,44\,s. Mais \code{pip install psifx} ne
+peut pas se résoudre. \code{requirements.txt} reste donc sur pyannote~3.3.2. La voie propre est de porter
+MediaPipe vers l'API \enquote{Tasks}, sur une branche à part.
+
+\section{Veille : solutions apparues depuis le début du travail}
+\label{sec:veille}
+
+\begin{table}[H]
+\centering
+\caption{Nouveautés pertinentes pour psifx, et décision.}
+\label{tab:veille}
+\small
+\begin{tabularx}{\textwidth}{@{}lYl@{}}
+\toprule
+Solution & Constat & Décision \\
+\midrule
+SAM~3.1 \cite{hf_sam31} & Publié en mars 2026. Suivi conjoint des objets (\emph{Object Multiplex}), environ 7$\times$
+plus rapide à 128 objets. Poids accessibles, mais seulement pour le code de Meta : aucune intégration
+\code{transformers}. Le gain porte sur le nombre d'objets, pas sur les coupes. & À suivre \\
+pyannote \code{community-1} \cite{pyannote_community1} & Remplace \code{3.1} : DER de 49,7 à 44,6\,\% sur AVA-AVD,
+de 22,7 à 19,9\,\% sur AMI (chiffres de l'éditeur). Diarisation \enquote{exclusive} (un seul locuteur à la fois), qui
+simplifie l'alignement avec la transcription. Demande \code{pyannote.audio} 4 (psifx fige 3.3.2). & Testé, section~\ref{sec:community1} \\
+Détection du locuteur actif & Modèles entraînés, par exemple LoCoNet (95,2 mAP sur AVA) ou Light-ASD (94,1, léger)
+\cite{wang2023loconet,liao2023lightasd}. Ils plafonnent encore sur des vidéos variées \cite{unitalk2025}. Pourraient
+remplacer la règle sur les lèvres. & Branche à tester \\
+Transcription & Canary-Qwen et Parakeet TDT v3 (multilingue) devant Whisper large-v3 sur l'Open ASR Leaderboard
+\cite{open_asr_leaderboard}, mesuré surtout sur de la parole propre. & À mesurer sur nos vidéos \\
+DINOv3 & Successeur de DINOv2, en accès restreint ; non testé. & Si l'accès est accordé \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =============================================================================
 \chapter{Travaux futurs}
 \label{chap:futur}
 % =============================================================================
@@ -862,6 +1298,24 @@ Trois axes ont été retenus pour la phase suivante :
     \cite{pvuw2026reprompt}.
 \end{enumerate}
 
+Le test d'occlusion a été fait avec OCHuman (section~\ref{sec:phase2-reunion}). Au 26 octobre 2026, SAM~3.1 n'est
+toujours pas intégré à \code{transformers} (section~\ref{sec:veille}). Le test de bout en bout
+(section~\ref{sec:e2e}) ajoute les axes suivants, tournés vers la fiabilité sur des vidéos réelles et bruitées :
+\begin{enumerate}[resume]
+    \item \textbf{Association voix--personne dans psifx} : faire du script par les lèvres une commande
+    (\code{psifx audio identification}) au même format que l'identification par micros, puis la comparer à un modèle
+    de détection du locuteur actif entraîné \cite{liao2023lightasd}.
+    \item \textbf{Diarisation} : \code{community-1} est validé (section~\ref{sec:community1}) ; pour l'adopter dans
+    \code{requirements.txt}, porter MediaPipe vers l'API \enquote{Tasks} (\code{HolisticLandmarker}), ce qui lève le
+    conflit protobuf, puis passer à whisperx~3.8.7. Corriger aussi l'identification par micros, qui plante quand la
+    diarisation trouve plus de locuteurs que de micros.
+    \item \textbf{Robustesse au bruit et à la musique} : séparation de la voix avant transcription (option psifx),
+    transcription vide plutôt qu'un plantage quand aucune parole n'est détectée, et mesure du WER sur de la parole
+    bruitée.
+    \item \textbf{Coût du suivi} : SAM3 domine le temps de calcul (13 à 19$\times$ le temps réel) ; mesurer
+    SAM~3.1 dès qu'il est utilisable, et une détection une image sur N.
+\end{enumerate}
+
 Restent en réserve : les optimisations de vitesse vidéo du tableau~\ref{tab:futur}, une nouvelle mesure de DETRPose
 avec synchronisation CUDA et de toutes les vitesses sur un GPU non partagé, et la validation de la licence de
 Sapiens2 avant tout nouvel investissement.
@@ -881,6 +1335,14 @@ Les mesures d'optimisation rappellent qu'un gain annoncé sur un modèle ne se t
 bout : il faut profiler la chaîne complète avant d'optimiser, et vérifier la précision après chaque optimisation.
 RTMO et ViTPose ont été retenus pour la bibliothèque (section~\ref{sec:decisions}) ; la phase suivante porte sur le
 corps entier, le multi-personnes natif et l'occlusion (chapitre~\ref{chap:futur}).
+
+La seconde phase a montré que psifx, complété par quelques scripts, va de la vidéo brute à des données
+exploitables : poses 2D et 3D par personne, transcription et sous-titres attribués à chaque personne, réutilisés pour
+reconstruire une vidéo. Elle a surtout montré où cette chaîne casse sur des vidéos réelles : le montage, que le suivi
+SAM3 gère désormais par plan avec une ré-identification par l'apparence ; la musique, qui demande de séparer la voix ;
+les visages peu lisibles et la diarisation qui sur-découpe. La suite vise la fiabilité dans ces conditions : intégrer
+l'association voix--personne à psifx, adopter pyannote \code{community-1}, qui estime bien mieux le nombre de
+locuteurs dans le bruit et sur les films, et agir avant la diarisation pour le bruit fort (chapitre~\ref{chap:futur}).
 
 % =============================================================================
 \appendix
@@ -905,6 +1367,12 @@ Branche & Contenu \\
 \code{optim/rtmo-fp16-int8} & \code{--precision fp16|int8} \\
 \code{optim/vitpose-compile-fp16} & \code{--fp16}, \code{--compile} \\
 \code{optim/detrpose-compile-fp16} & \code{--fp16}, \code{--compile} \\
+\code{analysis/vitpose-gap} & Analyse de l'écart de ViTPose \\
+\code{analysis/int8-root-cause} & Analyse de l'échec de l'INT8 \\
+\code{feature/pose-body-command} & \code{psifx video pose body} (RTMO, ViTPose) \\
+\code{feature/tests-ochuman} & Test de précision sur OCHuman \\
+\code{fix/sam3-shot-changes} & Suivi SAM3 à travers les plans (mergée dans \code{dev}) \\
+\code{experiment/e2e-demo} & Test de bout en bout, 3D MediaPipe \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -934,9 +1402,18 @@ python compare_psifx_cli.py
 \end{verbatim}
 }
 
+Test OCHuman et test de bout en bout :
+{\footnotesize
+\begin{verbatim}
+OCHUMAN_ROOT=/path/to/ochuman pytest -m dataset -s
+python research/e2e/run_pipeline.py .e2e_outputs/v3_talkshow --chunk_size 64
+python research/e2e/summarize.py .e2e_outputs/v1_example .e2e_outputs/v2_ava ...
+\end{verbatim}
+}
+
 \section{Versions logicielles}
 
-PyTorch 2.8.0 (cu128), \code{transformers} 5.3.0, \code{rtmlib} 0.0.16, \code{onnxruntime-gpu} 1.20.2,
+PyTorch 2.8.0 (cu128), \code{transformers} 5.3.0 (SAM3, DINOv2-small), \code{rtmlib} 0.0.16, \code{onnxruntime-gpu} 1.20.2,
 \code{onnx} 1.17.0, protobuf 4.25.9 (exigé par MediaPipe 0.10.14), numpy 2.0.2. Environnement DETRPose : Python
 3.11.9, PyTorch 2.14.1 (cu130), numpy 1.23.5.
 

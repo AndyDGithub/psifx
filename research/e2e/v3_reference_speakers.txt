@@ -1,0 +1,43 @@
+# Segment index in transcription.vtt -> speaker, labeled from the text only when it is unambiguous:
+# Copy it to .e2e_outputs/v3_talkshow/reference_speakers.txt; indices refer to the 2026-10-26 transcription (99 segments).
+# questions and remarks of the interviewer (person_0), the guest speaking of herself (person_1, feminine forms).
+0 person_0
+1 person_1
+2 person_0
+4 person_0
+7 person_0
+10 person_1
+43 person_0
+50 person_0
+51 person_0
+52 person_0
+55 person_0
+57 person_1
+58 person_1
+59 person_1
+60 person_1
+61 person_1
+64 person_1
+65 person_1
+66 person_1
+69 person_1
+70 person_1
+71 person_0
+72 person_0
+73 person_0
+78 person_0
+79 person_1
+80 person_1
+81 person_1
+82 person_0
+86 person_1
+87 person_0
+88 person_1
+91 person_0
+92 person_0
+93 person_1
+94 person_1
+95 person_1
+96 person_1
+97 person_1
+98 person_0

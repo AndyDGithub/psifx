@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from psifx.utils.command import Command, register_command
+from psifx.video.pose.body.command import BodyCommand
 from psifx.video.pose.mediapipe.command import MediaPipeCommand
 from psifx.video.pose.rtmo.command import RTMOCommand
 from psifx.video.pose.vitpose.command import ViTPoseCommand
@@ -26,6 +27,7 @@ class PoseEstimationCommand(Command):
         """
         subparsers = parser.add_subparsers(title="available commands")
 
+        register_command(subparsers, "body", BodyCommand)
         register_command(subparsers, "mediapipe", MediaPipeCommand)
         register_command(subparsers, "rtmo", RTMOCommand)
         register_command(subparsers, "vitpose", ViTPoseCommand)
