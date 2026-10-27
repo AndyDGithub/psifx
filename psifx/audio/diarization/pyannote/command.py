@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from psifx.utils.command import Command, register_command
-from psifx.audio.diarization.pyannote.tool import PyannoteDiarizationTool
+from psifx.audio.diarization.pyannote.tool import PyannoteDiarizationTool, default_model_name
 
 
 class PyannoteCommand(Command):
@@ -72,11 +72,30 @@ class PyannoteInferenceCommand(Command):
             " guess it, it is advised to specify it",
         )
         parser.add_argument(
+            "--min_speakers",
+            type=int,
+            default=None,
+            help="lower bound on the number of speaking participants, when it is not known exactly",
+        )
+        parser.add_argument(
+            "--max_speakers",
+            type=int,
+            default=None,
+            help="upper bound on the number of speaking participants, when it is not known exactly",
+        )
+        parser.add_argument(
+            "--exclusive",
+            default=False,
+            action=argparse.BooleanOptionalAction,
+            help="keep a single speaker at a time, which simplifies the alignment with a"
+            " transcription (pyannote.audio 4 only)",
+        )
+        parser.add_argument(
             "--model_name",
             type=str,
-            default="pyannote/speaker-diarization@2.1.1",
-            help="name of the diarization model used, c.f."
-            " https://huggingface.co/pyannote/speaker-diarization/tree/main/reproducible_research",
+            default=default_model_name(),
+            help="name of the diarization model used, pyannote/speaker-diarization-community-1 with"
+            " pyannote.audio 4, pyannote/speaker-diarization-3.1 otherwise",
         )
         parser.add_argument(
             "--api_token",
@@ -123,5 +142,8 @@ class PyannoteInferenceCommand(Command):
             audio_path=args.audio,
             diarization_path=args.diarization,
             num_speakers=args.num_speakers,
+            min_speakers=args.min_speakers,
+            max_speakers=args.max_speakers,
+            exclusive=args.exclusive,
         )
         del tool

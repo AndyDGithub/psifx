@@ -20,7 +20,7 @@ from pyannote.core import Segment
 
 from psifx.audio.identification.tool import IdentificationTool
 from psifx.io import rttm, json, wav
-from psifx.utils.huggingface import patch_hf_hub_download_use_auth_token
+from psifx.utils.huggingface import patch_hf_hub_download_use_auth_token, pyannote_token_kwargs
 
 def cropped_waveform(
     path: Union[str, Path],
@@ -82,7 +82,7 @@ class PyannoteIdentificationTool(IdentificationTool):
                 name: PretrainedSpeakerEmbedding(
                     embedding=name,
                     device=torch.device(device),
-                    use_auth_token=self.api_token,
+                    **pyannote_token_kwargs(self.api_token),
                 )
                 for name in model_names
             }
