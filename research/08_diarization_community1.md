@@ -27,6 +27,11 @@ Avec pyannote 3.3.2, le code modifié redonne exactement la même diarisation 3.
 
 ## 3. Dépendances : le vrai coût
 
+> **Mise à jour du 2026-10-27.** Le conflit décrit ci-dessous est levé par le passage de MediaPipe à
+> l'API Tasks (mediapipe 1.1.1, sans protobuf ; note 09). `requirements.txt` passe donc à
+> pyannote.audio 4.0.7, whisperx 3.8.7rc1 et matplotlib 3.10.7. pip résout l'ensemble des
+> dépendances dans un environnement vide ; il choisit torchcodec 0.7.0 grâce à la borne de whisperx.
+
 | Paquet | psifx | Avec pyannote 4 | Raison |
 |---|---|---|---|
 | pyannote.audio | 3.3.2 | 4.0.7 | — |

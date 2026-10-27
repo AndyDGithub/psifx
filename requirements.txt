@@ -1,7 +1,7 @@
 # Audio Processing
-whisperx==3.7.4
+whisperx==3.8.7rc1
 opensmile==2.6.0
-pyannote.audio==3.3.2
+pyannote.audio==4.0.7
 pydub==0.25.1
 speechbrain==1.0.3
 
@@ -33,7 +33,7 @@ langchain-ollama==0.3.10
 ollama==0.6.0
 
 # Utilities
-matplotlib==3.8.4
+matplotlib==3.10.7
 nltk==3.9.2
 platformdirs==4.5.0
 tqdm==4.67.1
