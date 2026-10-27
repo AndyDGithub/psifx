@@ -153,7 +153,10 @@ def run_stages(stages: List[Stage], d: Path, timings: Dict[str, float], max_para
     state between threads. Each child writes to its own log file, never to a pipe, so it cannot block
     on a full pipe buffer while the scheduler waits.
     """
-    timings_path = d / "timings.json"
+    timings_path, spans_path = d / "timings.json", d / "stage_spans.json"
+    # Start and end (Unix time) of each stage: with stages overlapping, the sum of the timings is no
+    # longer the wall-clock time, evaluate.py measures it on these spans.
+    spans = json.loads(spans_path.read_text()) if spans_path.exists() else {}
     pending = list(stages)
     done = set()
     running: Dict[str, Running] = {}
@@ -199,6 +202,8 @@ def run_stages(stages: List[Stage], d: Path, timings: Dict[str, float], max_para
                 done.add(name)
                 timings[name] = round(elapsed, 2)
                 timings_path.write_text(json.dumps(timings, indent=2))
+                spans[name] = [round(time.time() - elapsed, 2), round(time.time(), 2)]
+                spans_path.write_text(json.dumps(spans, indent=2))
                 print(f"[done] {name}: {elapsed:.1f}s", flush=True)
     except KeyboardInterrupt:
         for name, job in running.items():

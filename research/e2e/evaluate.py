@@ -197,6 +197,22 @@ def contact_sheet(render: Path, out: Path, n: int = 8):
     cv2.imwrite(str(out), np.vstack(rows))
 
 
+def busy_seconds(d: Path, timings: dict) -> float:
+    """Wall-clock time of the run: union of the stage spans, as stages may overlap (run_pipeline.py).
+
+    Gaps between two resumed runs are not counted. Without spans (older runs, one stage at a time),
+    the sum of the stage timings.
+    """
+    spans_path = d / "stage_spans.json"
+    if not spans_path.exists():
+        return sum(timings.values())
+    total, end = 0.0, float("-inf")
+    for start, stop in sorted(json.loads(spans_path.read_text()).values()):
+        total += max(0.0, stop - max(start, end))
+        end = max(end, stop)
+    return total
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("out_dir", type=Path)
@@ -258,7 +274,7 @@ def main():
     if (d / "timings.json").exists():
         timings = json.loads((d / "timings.json").read_text())
         metrics["timings_s"] = timings
-        metrics["real_time_factor"] = round(sum(timings.values()) / duration, 2)
+        metrics["real_time_factor"] = round(busy_seconds(d, timings) / duration, 2)
 
     if (d / "render.mp4").exists():
         contact_sheet(d / "render.mp4", d / "contact_sheet.jpg")
