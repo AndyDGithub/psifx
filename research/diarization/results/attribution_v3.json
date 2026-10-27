@@ -1,0 +1,12 @@
+{
+ "v3_talkshow": {
+  "community1": 0.902,
+  "community1_auto": 0.899,
+  "community1_auto_excl": 0.895,
+  "community1_excl": 0.899,
+  "legacy31": 0.902,
+  "legacy31_auto": 0.9,
+  "legacy31_auto_excl": 0.898,
+  "legacy31_excl": 0.899
+ }
+}

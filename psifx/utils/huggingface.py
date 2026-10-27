@@ -50,3 +50,15 @@ def patch_hf_hub_download_use_auth_token() -> None:
             continue
         if hasattr(module, "hf_hub_download"):
             setattr(module, "hf_hub_download", compat_hf_hub_download)
+
+
+def pyannote_token_kwargs(token: str | None) -> dict:
+    """
+    Keyword argument carrying the Hugging Face token for pyannote loaders.
+
+    pyannote.audio 4 renamed ``use_auth_token`` to ``token``.
+    """
+    from pyannote.audio import Pipeline
+
+    parameters = inspect.signature(Pipeline.from_pretrained).parameters
+    return {"token": token} if "token" in parameters else {"use_auth_token": token}

@@ -1,0 +1,102 @@
+{
+ "v1_babble_0db": {
+  "community1": 0.781,
+  "community1_auto": 0.781,
+  "community1_auto_excl": 0.77,
+  "community1_excl": 0.77,
+  "legacy31": 0.782,
+  "legacy31_auto": 0.765,
+  "legacy31_auto_excl": 0.757,
+  "legacy31_excl": 0.765
+ },
+ "v1_babble_10db": {
+  "community1": 0.88,
+  "community1_auto": 0.88,
+  "community1_auto_excl": 0.874,
+  "community1_excl": 0.874,
+  "legacy31": 0.661,
+  "legacy31_auto": 0.985,
+  "legacy31_auto_excl": 0.985,
+  "legacy31_excl": 0.661
+ },
+ "v1_babble_5db": {
+  "community1": 0.826,
+  "community1_auto": 0.57,
+  "community1_auto_excl": 0.489,
+  "community1_excl": 0.806,
+  "legacy31": 0.669,
+  "legacy31_auto": 0.86,
+  "legacy31_auto_excl": 0.839,
+  "legacy31_excl": 0.65
+ },
+ "v1_example": {
+  "community1": 0.998,
+  "community1_auto": 0.998,
+  "community1_auto_excl": 0.998,
+  "community1_excl": 0.998,
+  "legacy31": 0.998,
+  "legacy31_auto": 0.998,
+  "legacy31_auto_excl": 0.998,
+  "legacy31_excl": 0.998
+ },
+ "v1_music_0db": {
+  "community1": 0.952,
+  "community1_auto": 0.952,
+  "community1_auto_excl": 0.797,
+  "community1_excl": 0.797,
+  "legacy31": 0.946,
+  "legacy31_auto": 0.946,
+  "legacy31_auto_excl": 0.678,
+  "legacy31_excl": 0.678
+ },
+ "v1_music_10db": {
+  "community1": 0.998,
+  "community1_auto": 0.998,
+  "community1_auto_excl": 0.998,
+  "community1_excl": 0.998,
+  "legacy31": 0.998,
+  "legacy31_auto": 0.998,
+  "legacy31_auto_excl": 0.998,
+  "legacy31_excl": 0.998
+ },
+ "v1_music_5db": {
+  "community1": 0.998,
+  "community1_auto": 0.998,
+  "community1_auto_excl": 0.998,
+  "community1_excl": 0.998,
+  "legacy31": 0.998,
+  "legacy31_auto": 0.998,
+  "legacy31_auto_excl": 0.998,
+  "legacy31_excl": 0.998
+ },
+ "v1_pink_0db": {
+  "community1": 0.489,
+  "community1_auto": 0.489,
+  "community1_auto_excl": 0.489,
+  "community1_excl": 0.489,
+  "legacy31": 0.489,
+  "legacy31_auto": 0.489,
+  "legacy31_auto_excl": 0.489,
+  "legacy31_excl": 0.489
+ },
+ "v1_pink_10db": {
+  "community1": 0.948,
+  "community1_auto": 0.948,
+  "community1_auto_excl": 0.948,
+  "community1_excl": 0.948,
+  "legacy31": 0.948,
+  "legacy31_auto": 0.948,
+  "legacy31_auto_excl": 0.948,
+  "legacy31_excl": 0.948
+ },
+ "v1_pink_5db": {
+  "community1": 0.858,
+  "community1_auto": 0.858,
+  "community1_auto_excl": 0.858,
+  "community1_excl": 0.858,
+  "legacy31": 0.858,
+  "legacy31_auto": 0.858,
+  "legacy31_auto_excl": 0.858,
+  "legacy31_excl": 0.858
+ }
+}
