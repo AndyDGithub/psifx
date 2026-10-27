@@ -1,0 +1,40 @@
+50 images
+The image processor of type `RTDetrImageProcessor` is now loaded as a fast processor by default, even if the model checkpoint was saved with a slow processor. This is a breaking change and may produce slightly different outputs. To continue using the slow processor, instantiate this class with `use_fast=False`. 
+The image processor of type `VitPoseImageProcessor` is now loaded as a fast processor by default, even if the model checkpoint was saved with a slow processor. This is a breaking change and may produce slightly different outputs. To continue using the slow processor, instantiate this class with `use_fast=False`. 
+load /home/psifx/.cache/rtmlib/hub/checkpoints/yolox_m_8xb8-300e_humanart-c2c7a14a.onnx with onnxruntime backend
+load /home/psifx/.cache/rtmlib/hub/checkpoints/rtmpose-m_simcc-body7_pt-body7_420e-256x192-e48f03d0_20230504.onnx with onnxruntime backend
+load /home/psifx/.cache/rtmlib/hub/checkpoints/rtmo-m_16xb16-600e_body7-640x640-39e78cc4_20231211.onnx with onnxruntime backend
+vitB|video|rtdetr|largest        OKS 0.850  PCK 0.914
+vitB|raw|rtdetr|largest          OKS 0.853  PCK 0.915
+vitB|raw|rtdetr|best             OKS 0.862  PCK 0.930
+vitB|raw|yolox|best              OKS 0.849  PCK 0.913
+vitB|raw|gt                      OKS 0.889  PCK 0.966
+vitB|raw|gt|flip                 OKS 0.896  PCK 0.972
+vitB|raw|yolox|best|flip         OKS 0.848  PCK 0.913
+rtmpose|video|yolox|largest      OKS 0.873  PCK 0.935
+rtmpose|raw|yolox|largest        OKS 0.858  PCK 0.923
+rtmpose|raw|yolox|best           OKS 0.858  PCK 0.923
+rtmpose|raw|rtdetr|best          OKS 0.859  PCK 0.926
+rtmpose|raw|gt                   OKS 0.896  PCK 0.965
+rtmo|video|largest               OKS 0.826  PCK 0.880
+rtmo|raw|best                    OKS 0.824  PCK 0.887
+vitpose-base|raw|gt              OKS 0.883  PCK 0.972
+vitpose-base|raw|gt|flip         OKS 0.895  PCK 0.974
+vitpose-plus-small|raw|gt        OKS 0.876  PCK 0.952
+vitpose-plus-small|raw|gt|flip   OKS 0.885  PCK 0.957
+vitpose-plus-base|raw|gt         OKS 0.890  PCK 0.963
+vitpose-plus-base|raw|gt|flip    OKS 0.901  PCK 0.966
+vitpose-plus-large|raw|gt        OKS 0.908  PCK 0.980
+vitpose-plus-large|raw|gt|flip   OKS 0.909  PCK 0.980
+vitpose-plus-huge|raw|gt         OKS 0.913  PCK 0.982
+vitpose-plus-huge|raw|gt|flip    OKS 0.912  PCK 0.982
+
+Paired differences in mean OKS (A - B), 95% bootstrap CI:
+  psifx setting: ViTPose vs RTMPose      -0.022  [-0.066, +0.008]
+  same GT boxes: pose model only         -0.006  [-0.038, +0.028]
+  same YOLOX boxes                       -0.009  [-0.034, +0.010]
+  ViTPose: RT-DETR vs YOLOX boxes        +0.013  [-0.003, +0.038]
+  ViTPose: largest vs best box           -0.009  [-0.027, +0.000]
+  ViTPose: video vs raw frames           -0.002  [-0.007, +0.001]
+  ViTPose: flip test                     +0.006  [+0.001, +0.012]
+exit 0
