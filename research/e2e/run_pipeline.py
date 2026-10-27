@@ -82,7 +82,8 @@ def build_stages(d: Path, args: argparse.Namespace) -> List[Stage]:
             "audio", "manipulation", "normalization", "--audio", str(d / "audio_mono.wav"), "--normalized_audio", str(audio))),
         Stage("diarization", [d / "diarization.rttm"], psifx(
             "audio", "diarization", "pyannote", "inference", "--audio", str(audio), "--diarization",
-            str(d / "diarization.rttm"), "--model_name", "pyannote/speaker-diarization-3.1", "--device", "cuda", *speakers)),
+            # psifx default model: pyannote community-1 (research/08_diarization_community1.md).
+            str(d / "diarization.rttm"), "--device", "cuda", *speakers)),
         Stage("transcription", [d / "transcription.vtt"], psifx(
             "audio", "transcription", "whisperx", "inference", "--audio", str(audio), "--transcription",
             str(d / "transcription.vtt"), "--model_name", args.whisper_model, "--device", "cuda",
