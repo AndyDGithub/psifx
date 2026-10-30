@@ -99,11 +99,12 @@ class OpenFaceTool(FaceAnalysisTool):
         tmp_dir = Path(f"/tmp/TEMP_{time.time()}")
         tmp_dir.mkdir(parents=True)
 
-        args = f"{EXECUTABLE_PATH} -f {video_path} -out_dir {tmp_dir} {DEFAULT_OPTIONS}"
+        # A list, not a string split on spaces: paths may contain spaces ("2026-10-22 12-13-23.mp4").
+        args = [str(EXECUTABLE_PATH), "-f", str(video_path), "-out_dir", str(tmp_dir), *shlex.split(DEFAULT_OPTIONS)]
 
         if self.verbose:
             print("OpenFace will run with the following command:")
-            print(f"{args}")
+            print(shlex.join(args))
             print("It might take a while, depending on the number of CPUs.")
 
         try:
@@ -113,7 +114,7 @@ class OpenFaceTool(FaceAnalysisTool):
                     disable=not self.verbose,
             ):
                 process = subprocess.run(
-                    args=shlex.split(args),
+                    args=args,
                     check=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
@@ -125,8 +126,13 @@ class OpenFaceTool(FaceAnalysisTool):
 
         except subprocess.CalledProcessError as error:
             print(error.stdout)
+            raise RuntimeError(f"OpenFace failed on {video_path} (exit {error.returncode}), see its output above.") from error
 
-        dirty_dataframe = pd.read_csv(tmp_dir / (video_path.stem + ".csv"))
+        csv_path = tmp_dir / (video_path.stem + ".csv")
+        if not csv_path.is_file():
+            # OpenFace can exit with 0 without reading the video (unreadable codec, wrong path).
+            raise RuntimeError(f"OpenFace wrote no features for {video_path}; its output:\n{process.stdout}")
+        dirty_dataframe = pd.read_csv(csv_path)
 
         clean_dataframe = pd.DataFrame()
         clean_dataframe["index"] = dirty_dataframe["frame"] - 1
