@@ -81,6 +81,12 @@ Let's begin by installing up psifx and getting the example video from the git re
    python install.py && \
    rm install.py
    ```
+   OpenFace's model download can silently save web pages instead of some of its models, and
+   `FeatureExtraction` then aborts with `std::bad_alloc`. Once the repository is cloned (step 7),
+   check them, and re-download the broken ones, with:
+   ```bash
+   bash docker/check_openface_models.sh $HOME/openface
+   ```
 
 6. Install [Ollama](https://github.com/ollama/ollama) locally.
    For Linux users, use this command:
@@ -102,6 +108,9 @@ Let's begin by installing up psifx and getting the example video from the git re
 The video setting feature a staged discussion between two individuals.
 To simplify the workflow only one point of view is provided.
 
+To run the commands on your own video, replace `Video.mp4` with its name, in quotes if it
+contains spaces, for example `--video "2026-10-22 12-13-23.mp4"`.
+
 
 ### Tracking
 To track and segment individuals with SAM3, and produce segmentation masks.
@@ -112,12 +121,13 @@ psifx video tracking sam3 inference \
     --text_prompt "people" \
     --chunk_size 300 \
     --iou_threshold 0.3 \
-    [--max_num_objects N] \
     --device cuda \
     --overwrite
 ```
 For very long videos or limited GPU memory, reduce `--chunk_size` (for example `64` or `128`).
-If needed, set `--max_num_objects` to cap how many tracks are written (default is no explicit cap).
+A chunk that does not fit in GPU memory is split in two and retried, so `CUDA OOM while processing
+frames ...` messages are expected and harmless.
+To cap how many tracks are written, add `--max_num_objects N` (default: no cap).
 
 To visualize the tracking / segmentation masks:
 
@@ -129,7 +139,8 @@ psifx video tracking visualization \
 ```
 
 ### Pose
-Detect and analyze human poses using MediaPipe.
+Detect and analyze human poses using MediaPipe. On the whole video, MediaPipe follows a single
+person; see [Several people](#several-people) to get one pose per tracked person.
 ```bash
 psifx video pose mediapipe single-inference \
     --video Video.mp4 \
@@ -142,6 +153,32 @@ psifx video pose mediapipe visualization \
     --poses Poses.tar.gz \
     --visualization VisualizationPoses.mp4 --overwrite
 ```
+### Several people
+With the SAM3 masks, estimate one pose per tracked person, with MediaPipe (body, face and hands)
+and with RTMO (body only, sturdier on hard poses). Each command writes one archive per person.
+```bash
+psifx video pose mediapipe multi-inference \
+    --video Video.mp4 \
+    --masks masks \
+    --poses_dir PosesMediaPipe --overwrite
+psifx video pose mediapipe visualization \
+    --video Video.mp4 \
+    --poses PosesMediaPipe \
+    --visualization VisualizationPosesMediaPipe.mp4 --overwrite
+psifx video pose body multi-inference \
+    --video Video.mp4 \
+    --masks masks \
+    --poses_dir PosesBody \
+    --model rtmo \
+    --device cuda --overwrite
+psifx video pose body visualization \
+    --video Video.mp4 \
+    --poses PosesBody \
+    --visualization VisualizationPosesBody.mp4 --overwrite
+```
+MediaPipe runs on the CPU only; `multi-inference` processes several people at the same time
+(`--num_workers`, by default one per 4 CPU cores).
+
 ### Face
 Extract facial features from the video using OpenFace.
 ```bash
@@ -224,7 +261,9 @@ psifx audio diarization visualization \
 ```
 
 ### Speaker Identification
-Associates speakers in a mixed audio file with known audio samples.
+Associates speakers in a mixed audio file with known audio samples. It needs one microphone per
+person, as the two lavalier channels of this example; on a recording with a single microphone,
+the left and right channels carry the same voices and the mapping is meaningless.
 ```bash
 psifx audio identification pyannote inference \
     --mixed_audio Audio.wav \
@@ -271,6 +310,7 @@ EOF
 ```
 
 Use a language model to analyse the content of the transcription according to some instruction.
+By default, it uses `llama3.1` with Ollama, which is downloaded on the first run (about 5 GB).
 
 ```bash
 psifx text instruction \
