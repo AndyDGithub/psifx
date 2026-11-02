@@ -138,6 +138,16 @@ class PyannoteIdentificationTool(IdentificationTool):
         dataframe = pd.DataFrame.from_records(segments)
         dataframe["end"] = dataframe["start"] + dataframe["duration"]
 
+        # Each speaker gets its own mono audio: with fewer audios, some speakers would have no mapping
+        # and the transcription enhancement could not name them. Checked before computing embeddings.
+        n_speakers = dataframe["speaker_name"].nunique()
+        if n_speakers > len(mono_audio_paths):
+            raise ValueError(
+                f"The diarization found {n_speakers} speakers but {len(mono_audio_paths)} mono audios were "
+                f"given, one per speaker is needed. Run the diarization again with "
+                f"--num_speakers {len(mono_audio_paths)}, or give one mono audio per speaker."
+            )
+
         for name, model in tqdm(
             self.models.items(),
             desc="Processing",
