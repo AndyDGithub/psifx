@@ -82,11 +82,15 @@ class PyannoteIdentificationTool(IdentificationTool):
         self._register_torch_safe_globals()
         patch_hf_hub_download_use_auth_token()
         patch_speechbrain_for_hf_hub_1()
+        cache_dir = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "psifx"
         try:
             self.models = {
                 name: PretrainedSpeakerEmbedding(
                     embedding=name,
                     device=torch.device(device),
+                    # Without it, pyannote 4 saves the speechbrain model under "None/speechbrain"
+                    # in the current directory.
+                    cache_dir=cache_dir,
                     **pyannote_token_kwargs(self.api_token),
                 )
                 for name in model_names
