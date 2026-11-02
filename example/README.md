@@ -245,11 +245,14 @@ psifx audio manipulation normalization \
 
 
 ### Speaker Diarization
-Identifies segments for each speaker in the audio file.
+Identifies segments for each speaker in the audio file. Give the number of speakers when you know
+it: the identification below needs exactly one mono audio per speaker, and without this option the
+model may hear an extra voice (a jingle, a short off-screen voice).
 ```bash
 psifx audio diarization pyannote inference \
     --audio Audio.wav \
-    --diarization Diarization.rttm
+    --diarization Diarization.rttm \
+    --num_speakers 2
 ```
 
 ### Diarization Visualization
