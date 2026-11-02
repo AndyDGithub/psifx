@@ -79,6 +79,10 @@ RUN wget -q https://raw.githubusercontent.com/GuillaumeRochette/OpenFace/master/
 # devcontainer.json bind-mounts the live workspace over this same path, so
 # edits on the host are picked up immediately without rebuilding the image.
 COPY --chown=$USERNAME:$USERNAME . /home/$USERNAME/psifx
+
+# OpenFace's own download script can save Dropbox HTML pages instead of its CEN models, which makes
+# FeatureExtraction abort with std::bad_alloc: fetch them again, fail the build if still broken.
+RUN bash /home/$USERNAME/psifx/docker/check_openface_models.sh "$OPENFACE_DIR"
 WORKDIR /home/$USERNAME/psifx
 
 # `source` is a bash builtin, not available under Docker's default /bin/sh.
