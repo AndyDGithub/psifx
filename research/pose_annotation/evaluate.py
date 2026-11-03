@@ -140,6 +140,8 @@ def from_preannotation(path: Path) -> dict[str, list[np.ndarray]]:
 def from_model(spec: str, images: list[Path], device: str) -> dict[str, list[np.ndarray]]:
     """Runs ``family:option`` on each image, every person kept."""
     import cv2
+    # Before RTMO: the CUDA libraries it preloads for onnxruntime break a later torch import.
+    import torch  # noqa: F401
     from tqdm import tqdm
 
     family, _, option = spec.partition(":")
