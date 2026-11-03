@@ -21,6 +21,8 @@ Per model:
   diagonal, apart for visible and occluded points, and per keypoint;
 - ``phantom``: share of the points annotated absent (out of frame, under the table) that the model
   predicts with a score >= ``--min_score``: the points drawn where there is nothing;
+- ``absent_auc`` and ``phantom@keep95``: the same question without a fixed threshold, see
+  ``score_separation``;
 - ``extra_people``: predicted people left without a match. The small and blurry people are not
   annotated on purpose, so it is not an error count.
 
@@ -38,6 +40,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
+from scipy.stats import rankdata
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tests.pose_eval.coco import COCO_KEYPOINT_NAMES, COCO_OKS_SIGMAS, MEDIAPIPE_TO_COCO17  # noqa: E402
@@ -80,12 +83,30 @@ def match(preds: list[np.ndarray], gts: list[dict]) -> list[tuple[int, int, floa
     return [(r, c, scores[r, c]) for r, c in zip(rows, cols) if scores[r, c] > 0]
 
 
+def score_separation(labeled: np.ndarray, absent: np.ndarray) -> dict:
+    """Measures that do not depend on the scale of a model's scores (SimCC scores of RTMPose and RTMW are
+    not in [0, 1], so a fixed ``--min_score`` means something else for each model):
+
+    - ``absent_auc``: probability that a labeled point scores higher than a point annotated absent
+      (ROC AUC, Mann-Whitney); 0.5 means the score cannot tell them apart;
+    - ``phantom@keep95``: share of absent points kept at the threshold that keeps 95 % of the labeled ones.
+    """
+    if not len(labeled) or not len(absent):
+        return {"absent_auc": None, "phantom@keep95": None}
+    ranks = rankdata(np.concatenate([labeled, absent]))
+    auc = (ranks[:len(labeled)].sum() - len(labeled) * (len(labeled) + 1) / 2) / (len(labeled) * len(absent))
+    threshold = np.quantile(labeled, 0.05)
+    return {"absent_auc": round(float(auc), 3), "phantom@keep95": round(float(np.mean(absent >= threshold)), 3)}
+
+
 def evaluate(predictions: dict[str, list[np.ndarray]], truth: dict[str, list[dict]], min_score: float) -> dict:
     oks_all, found, extra = [], 0, 0
     # Per keypoint and visibility (1 occluded, 2 visible): correct and total counts per threshold.
     correct = {t: np.zeros((3, N)) for t in PCK_THRESHOLDS}
     total = np.zeros((3, N))
     phantom, absent = 0, 0
+    # Scores of the matched people's points, labeled or annotated absent: the threshold-free measures.
+    labeled_scores, absent_scores = [], []
     for name, gts in truth.items():
         preds = predictions.get(name, [])
         pairs = match(preds, gts)
@@ -102,6 +123,9 @@ def evaluate(predictions: dict[str, list[np.ndarray]], truth: dict[str, list[dic
             pred = preds[p]
             predicted = ~np.isnan(pred[:, 0]) & (np.nan_to_num(pred[:, 2]) >= min_score)
             dist = np.linalg.norm(pred[:, :2] - gt["xy"], axis=1)
+            score = np.where(np.isnan(pred[:, 0]), -np.inf, np.nan_to_num(pred[:, 2], nan=-np.inf))
+            labeled_scores += list(score[gt["v"] > 0])
+            absent_scores += list(score[gt["v"] == 0])
             for k in range(N):
                 if gt["v"][k] == 0:
                     absent += 1
@@ -117,6 +141,7 @@ def evaluate(predictions: dict[str, list[np.ndarray]], truth: dict[str, list[dic
         result[f"pck@{t}"] = round(float(correct[t][1:].sum() / total[1:].sum()), 3)
         for v, label in ((2, "visible"), (1, "occluded")):
             result[f"pck@{t}_{label}"] = round(float(correct[t][v].sum() / total[v].sum()), 3) if total[v].sum() else None
+    result.update(score_separation(np.array(labeled_scores), np.array(absent_scores)))
     t = PCK_THRESHOLDS[-1]
     result[f"pck@{t}_per_keypoint"] = {
         COCO_KEYPOINT_NAMES[k]: round(float(correct[t][1:, k].sum() / total[1:, k].sum()), 3)

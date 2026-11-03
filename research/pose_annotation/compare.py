@@ -6,7 +6,7 @@ time every annotated frame one by one, as a video would go, from the RGB frame t
 ``evaluate.py`` (OKS, found, PCK, phantom), and ``ms_per_frame``, ``load_s`` (load and warm-up) and
 ``peak_gpu_mb`` (PyTorch allocations only: ONNX Runtime memory is not counted) are added.
 
-Each model is written to ``--output`` as soon as it is done, and a spec already there is skipped
+The predictions go to ``predictions/<spec>.json`` next to ``--output``. Each model is written to ``--output`` as soon as it is done, and a spec already there is skipped
 (``--overwrite`` redoes it), so a crash or an out-of-memory error loses one model, not the run.
 
     python research/pose_annotation/compare.py .e2e_outputs/extrait_talkshow/pose_annotation \\
@@ -100,6 +100,11 @@ def main():
         finally:
             if args.device.startswith("cuda"):
                 torch.cuda.empty_cache()
+        # The raw predictions, to score them again later without running the model.
+        pred_dir = output.parent / "predictions"
+        pred_dir.mkdir(exist_ok=True)
+        (pred_dir / (spec.replace("/", "_").replace(":", "_") + ".json")).write_text(json.dumps(
+            {name: [p.tolist() for p in people] for name, people in predictions.items()}))
         results[spec] = {**evaluate(predictions, truth, args.min_score), **speed, "min_score": args.min_score,
                          "gpu": torch.cuda.get_device_name() if args.device.startswith("cuda") else "cpu"}
         output.write_text(json.dumps(results, indent=2))
