@@ -39,3 +39,13 @@ n'utilise pas : il faut donc **vérifier chaque point**, et ne pas valider un po
 Environ 20 à 40 s par personne. Fais des pauses toutes les 30 à 40 images : la précision baisse avec
 la fatigue. Si une image est ambiguë (flou de mouvement, fondu enchaîné), annote ce qui est sûr et
 note le nom du fichier : on décidera ensemble de la garder ou non.
+
+## Dans CVAT
+
+- Ouvre http://localhost:8080 (identifiants dans `ext/cvat_login.txt`), tâche « ExtraitTalkShow poses »,
+  puis son job. Les 200 images y sont avec les squelettes pré-annotés.
+- Clic droit sur un point : le marquer **occluded** (caché mais estimable) ou **outside** (absent).
+  Un point absent de la pré-annotation est déjà « outside » : pour l'ajouter, rends-le visible et
+  place-le.
+- Enregistre souvent (Ctrl+S). Pas besoin d'exporter à la fin : dis-moi que c'est fini, je récupère les
+  annotations par l'API.
