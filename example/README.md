@@ -81,6 +81,12 @@ Let's begin by installing up psifx and getting the example video from the git re
    python install.py && \
    rm install.py
    ```
+   OpenFace's model download can silently save web pages instead of some of its models, and
+   `FeatureExtraction` then aborts with `std::bad_alloc`. Once the repository is cloned (step 7),
+   check them, and re-download the broken ones, with:
+   ```bash
+   bash docker/check_openface_models.sh $HOME/openface
+   ```
 
 6. Install [Ollama](https://github.com/ollama/ollama) locally.
    For Linux users, use this command:
@@ -102,6 +108,9 @@ Let's begin by installing up psifx and getting the example video from the git re
 The video setting feature a staged discussion between two individuals.
 To simplify the workflow only one point of view is provided.
 
+To run the commands on your own video, replace `Video.mp4` with its name, in quotes if it
+contains spaces, for example `--video "2026-10-22 12-13-23.mp4"`.
+
 
 ### Tracking
 To track and segment individuals with SAM3, and produce segmentation masks.
@@ -112,12 +121,13 @@ psifx video tracking sam3 inference \
     --text_prompt "people" \
     --chunk_size 300 \
     --iou_threshold 0.3 \
-    [--max_num_objects N] \
     --device cuda \
     --overwrite
 ```
 For very long videos or limited GPU memory, reduce `--chunk_size` (for example `64` or `128`).
-If needed, set `--max_num_objects` to cap how many tracks are written (default is no explicit cap).
+A chunk that does not fit in GPU memory is split in two and retried, so `CUDA OOM while processing
+frames ...` messages are expected and harmless.
+To cap how many tracks are written, add `--max_num_objects N` (default: no cap).
 
 To visualize the tracking / segmentation masks:
 
@@ -129,7 +139,8 @@ psifx video tracking visualization \
 ```
 
 ### Pose
-Detect and analyze human poses using MediaPipe.
+Detect and analyze human poses using MediaPipe. On the whole video, MediaPipe follows a single
+person; see [Several people](#several-people) to get one pose per tracked person.
 ```bash
 psifx video pose mediapipe single-inference \
     --video Video.mp4 \
@@ -142,6 +153,37 @@ psifx video pose mediapipe visualization \
     --poses Poses.tar.gz \
     --visualization VisualizationPoses.mp4 --overwrite
 ```
+### Several people
+With the SAM3 masks, estimate one pose per tracked person, with MediaPipe (body, face and hands)
+and with ViTPose (body only, the most accurate). Each command writes one archive per person.
+```bash
+psifx video pose mediapipe multi-inference \
+    --video Video.mp4 \
+    --masks masks \
+    --poses_dir PosesMediaPipe --overwrite
+psifx video pose mediapipe visualization \
+    --video Video.mp4 \
+    --poses PosesMediaPipe \
+    --visualization VisualizationPosesMediaPipe.mp4 --overwrite
+psifx video pose body multi-inference \
+    --video Video.mp4 \
+    --masks masks \
+    --poses_dir PosesBody \
+    --model vitpose \
+    --device cuda --overwrite
+psifx video pose body visualization \
+    --video Video.mp4 \
+    --poses PosesBody \
+    --visualization VisualizationPosesBody.mp4 --overwrite
+```
+MediaPipe runs on the CPU only; `multi-inference` processes several people at the same time
+(`--num_workers`, by default one per 4 CPU cores).
+
+On 200 hand-annotated frames of a talk show (2 to 4 people), ViTPose found the body points best
+(OKS 0.89, against 0.74 for RTMO and 0.69 for MediaPipe). It is also about twice as slow as RTMO:
+for a faster run, use `--model rtmo --precision fp16`. MediaPipe remains the one for the face,
+the hands and 3D points.
+
 ### Face
 Extract facial features from the video using OpenFace.
 ```bash
@@ -208,11 +250,17 @@ psifx audio manipulation normalization \
 
 
 ### Speaker Diarization
-Identifies segments for each speaker in the audio file.
+Identifies segments for each speaker in the audio file. Here, `--num_speakers 2` matches the two
+lavalier microphones: the identification below needs exactly one mono audio per speaker, and
+without this option the model may hear an extra voice (a jingle, a short off-screen voice).
+On a recording without one microphone per person, leave the option out: counting the speakers
+itself, the model was closer to the real speaker turns on a talk show than when forced to a
+number.
 ```bash
 psifx audio diarization pyannote inference \
     --audio Audio.wav \
-    --diarization Diarization.rttm
+    --diarization Diarization.rttm \
+    --num_speakers 2
 ```
 
 ### Diarization Visualization
@@ -224,7 +272,11 @@ psifx audio diarization visualization \
 ```
 
 ### Speaker Identification
-Associates speakers in a mixed audio file with known audio samples.
+Associates speakers in a mixed audio file with known audio samples. It needs one microphone per
+person, as the two lavalier channels of this example; on a recording with a single microphone,
+the left and right channels carry the same voices and the mapping is meaningless (on a talk show,
+its agreement score was 0.52, chance level). The enhanced transcription below still needs its
+output, but its speaker names then tell nothing about who is who.
 ```bash
 psifx audio identification pyannote inference \
     --mixed_audio Audio.wav \
@@ -234,11 +286,15 @@ psifx audio identification pyannote inference \
 ``` 
 
 ### Speech Transcription
-Transcribe speech in the audio file to text.
+Transcribe speech in the audio file to text. Give the language of the recording (`en` here, `fr`
+for French, ...): guessed, it can be wrong on the first seconds. `large-v3-turbo` handles every
+language; the default model, `distil-large-v3`, only English.
 ```bash
 psifx audio transcription whisperx inference \
     --audio Audio.wav \
-    --transcription Transcription.vtt
+    --transcription Transcription.vtt \
+    --model_name large-v3-turbo \
+    --language en
 ```
 
 ### Enhanced Transcription
@@ -271,6 +327,7 @@ EOF
 ```
 
 Use a language model to analyse the content of the transcription according to some instruction.
+By default, it uses `llama3.1` with Ollama, which is downloaded on the first run (about 5 GB).
 
 ```bash
 psifx text instruction \

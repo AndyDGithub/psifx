@@ -12,7 +12,9 @@ from PIL import Image
 from transformers import Sam3VideoModel, Sam3VideoProcessor
 
 from psifx.io.video import VideoReader, VideoWriter
-from psifx.utils.constants import SAM3_PATH
+from psifx.utils.constants import SAM3_PATH, SAM3_REID_PATH
+from psifx.video.tracking.sam3.postprocessing import install_cv_utils_fallback
+from psifx.video.tracking.sam3.reid import AppearanceGallery, ShotDetector, sample_frames
 from psifx.video.tracking.tool import TrackingTool
 
 
@@ -23,6 +25,7 @@ class Sam3TrackingTool(TrackingTool):
         model_path: str = SAM3_PATH,
         api_token: str = None,
         max_num_objects: Optional[int] = None,
+        reid_model_path: str = SAM3_REID_PATH,
         overwrite: bool = False,
         verbose: Union[bool, int] = True,
     ):
@@ -35,12 +38,15 @@ class Sam3TrackingTool(TrackingTool):
         self.model_path = model_path
         self.api_token = api_token or os.environ.get("HF_TOKEN")
         self.max_num_objects = self._validate_positive_int(max_num_objects, "max_num_objects")
+        self.reid_model_path = reid_model_path
         os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
         # Keep raw video frames on CPU to cap GPU memory usage for long clips.
         self.video_storage_device = "cpu" if self.device == "cuda" else self.device
 
         if self.verbose:
             print(f"Loading SAM3 model from '{self.model_path}' on device '{self.device}'")
+
+        install_cv_utils_fallback(verbose=bool(self.verbose))
 
         try:
             self._register_torch_safe_globals()
@@ -63,6 +69,8 @@ class Sam3TrackingTool(TrackingTool):
         text_prompt: str = "people",
         chunk_size: int = 300,
         iou_threshold: float = 0.3,
+        shot_threshold: Optional[float] = 0.15,
+        reid_threshold: Optional[float] = 0.45,
     ):
         """
         Perform text-based segmentation and tracking from a video file.
@@ -72,9 +80,28 @@ class Sam3TrackingTool(TrackingTool):
         :param text_prompt: Text description of objects to track.
         :param chunk_size: Number of frames to process at once.
         :param iou_threshold: IoU threshold for stitching chunks together.
+        :param shot_threshold: Frame difference (0 to 1) above which a new shot starts, ``None`` to
+            never split. Tracking restarts at each shot, so no identity is carried over a cut.
+        :param reid_threshold: Minimum appearance similarity (cosine, -1 to 1) to give a new track
+            the id of a person seen before, ``None`` to only link tracks by mask overlap.
         """
         if chunk_size <= 0:
             raise ValueError(f"chunk_size must be > 0, got {chunk_size}.")
+        shot_detector = ShotDetector(threshold=shot_threshold) if shot_threshold else None
+        gallery = None
+        if reid_threshold is not None:
+            try:
+                gallery = AppearanceGallery(
+                    model_path=self.reid_model_path,
+                    threshold=reid_threshold,
+                    device=self.device,
+                    api_token=self.api_token,
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Failed to load the re-identification model '{self.reid_model_path}'. "
+                    "Pass another one with --reid_model_path, or disable re-identification."
+                ) from exc
 
         mask_dir = Path(mask_dir)
         if mask_dir.exists() and any(mask_dir.iterdir()):
@@ -94,11 +121,16 @@ class Sam3TrackingTool(TrackingTool):
         prev_last_global_masks: Dict[int, np.ndarray] = {}
         frame_size: Tuple[int, int] = (0, 0)
         processed_frame_count = 0
+        shot_count = 0
 
         try:
-            for start_frame, chunk in self._iter_video_chunks(video_path, chunk_size):
+            for start_frame, chunk, new_shot in self._iter_video_chunks(video_path, chunk_size, shot_detector):
                 if not frame_size[0] and not frame_size[1]:
                     frame_size = chunk[0].size
+                if new_shot:
+                    # Masks do not overlap across a cut: identities come from appearance only.
+                    prev_last_global_masks = {}
+                    shot_count += 1
 
                 # If a chunk still OOMs, split and retry recursively in-order.
                 pending_subchunks = deque([(start_frame, chunk)])
@@ -131,6 +163,8 @@ class Sam3TrackingTool(TrackingTool):
                         iou_threshold=iou_threshold,
                         next_global_id=next_global_id,
                         max_num_objects=self.max_num_objects,
+                        chunk=sub_chunk,
+                        gallery=gallery,
                     )
 
                     self._write_chunk_masks(
@@ -158,23 +192,35 @@ class Sam3TrackingTool(TrackingTool):
             raise ValueError(f"No frames found in input video: {video_path}")
         if not writers:
             print("No masks to write.")
+        elif self.verbose:
+            print(f"Tracked {len(writers)} objects over {shot_count} shots.")
 
     @staticmethod
     def _iter_video_chunks(
-        video_path: Union[str, Path], chunk_size: int
-    ) -> Iterable[Tuple[int, List[Image.Image]]]:
+        video_path: Union[str, Path],
+        chunk_size: int,
+        shot_detector: Optional[ShotDetector] = None,
+    ) -> Iterable[Tuple[int, List[Image.Image], bool]]:
+        """Yields ``(start_frame, frames, starts_a_new_shot)``; a chunk never spans a cut."""
         chunk: List[Image.Image] = []
         start_frame = 0
+        new_shot = True
         with VideoReader(path=video_path) as video_reader:
             for frame in video_reader:
+                if shot_detector is not None and shot_detector.is_cut(frame):
+                    if chunk:
+                        yield start_frame, chunk, new_shot
+                        start_frame += len(chunk)
+                        chunk = []
+                    new_shot = True
                 chunk.append(Image.fromarray(frame))
                 if len(chunk) >= chunk_size:
-                    yield start_frame, chunk
+                    yield start_frame, chunk, new_shot
                     start_frame += len(chunk)
-                    chunk = []
+                    chunk, new_shot = [], False
 
             if chunk:
-                yield start_frame, chunk
+                yield start_frame, chunk, new_shot
 
     def _segment_chunk(
         self,
@@ -230,6 +276,8 @@ class Sam3TrackingTool(TrackingTool):
         iou_threshold: float,
         next_global_id: int,
         max_num_objects: Optional[int] = None,
+        chunk: Optional[List[Image.Image]] = None,
+        gallery: Optional[AppearanceGallery] = None,
     ) -> Tuple[Dict[int, int], int]:
         id_mapping: Dict[int, int] = {}
 
@@ -259,6 +307,11 @@ class Sam3TrackingTool(TrackingTool):
                     id_mapping[curr_id] = best_global_id
                     used_global_ids.add(best_global_id)
 
+        if gallery is not None and chunk is not None:
+            return self._reidentify_chunk_objects(
+                chunk_outputs, chunk, gallery, id_mapping, next_global_id, max_num_objects
+            )
+
         for frame_idx in sorted(chunk_outputs.keys()):
             frame_out = chunk_outputs[frame_idx]
             for obj_id in frame_out["object_ids"]:
@@ -268,6 +321,65 @@ class Sam3TrackingTool(TrackingTool):
                     id_mapping[obj_id] = next_global_id
                     next_global_id += 1
 
+        return id_mapping, next_global_id
+
+    def _reidentify_chunk_objects(
+        self,
+        chunk_outputs: Dict[int, Dict[str, List]],
+        chunk: List[Image.Image],
+        gallery: AppearanceGallery,
+        id_mapping: Dict[int, int],
+        next_global_id: int,
+        max_num_objects: Optional[int] = None,
+        samples_per_object: int = 4,
+    ) -> Tuple[Dict[int, int], int]:
+        """
+        Gives each object not linked by mask overlap the id of the most similar known person, or a
+        new id when no one is similar enough. Once ``max_num_objects`` ids exist, the most similar
+        person is taken whatever the similarity. Two objects visible in the same frame never share
+        an id.
+        """
+        frames_by_object: Dict[int, List[int]] = defaultdict(list)
+        masks_by_object: Dict[int, Dict[int, np.ndarray]] = defaultdict(dict)
+        for frame_idx in sorted(chunk_outputs.keys()):
+            frame_out = chunk_outputs[frame_idx]
+            for obj_id, mask in zip(frame_out["object_ids"], frame_out["masks"]):
+                frames_by_object[obj_id].append(frame_idx)
+                masks_by_object[obj_id][frame_idx] = mask
+
+        embeddings = {}
+        for obj_id, frames in frames_by_object.items():
+            crops = [
+                gallery.crop(chunk[frame_idx], masks_by_object[obj_id][frame_idx])
+                for frame_idx in sample_frames(frames, samples_per_object)
+            ]
+            embeddings[obj_id] = gallery.embed([crop for crop in crops if crop is not None])
+
+        frame_sets = {obj_id: set(frames) for obj_id, frames in frames_by_object.items()}
+        # Objects in order of first appearance, as in the overlap-only mapping.
+        for obj_id in sorted(frames_by_object, key=lambda obj: frames_by_object[obj][0]):
+            if obj_id in id_mapping:
+                continue
+            excluded = {
+                global_id
+                for other_id, global_id in id_mapping.items()
+                if frame_sets.get(other_id, set()) & frame_sets[obj_id]
+            }
+            cap_reached = max_num_objects is not None and next_global_id >= max_num_objects
+            embedding = embeddings[obj_id]
+            if embedding is not None:
+                best_id, similarity = gallery.match(embedding, excluded)
+                if best_id is not None and (similarity >= gallery.threshold or cap_reached):
+                    id_mapping[obj_id] = best_id
+                    continue
+            if cap_reached:
+                continue
+            id_mapping[obj_id] = next_global_id
+            next_global_id += 1
+
+        for obj_id, global_id in id_mapping.items():
+            if embeddings.get(obj_id) is not None:
+                gallery.add(global_id, embeddings[obj_id])
         return id_mapping, next_global_id
 
     def _configure_model_max_num_objects(self, max_num_objects: int) -> None:
@@ -338,7 +450,9 @@ class Sam3TrackingTool(TrackingTool):
                 writers[global_obj_id] = VideoWriter(
                     path=mask_dir / f"{global_obj_id}.mp4",
                     input_dict={"-r": frame_rate},
-                    output_dict={"-c:v": "libx264", "-crf": "0", "-pix_fmt": "yuv420p"},
+                    # One encoder stays open per track: zerolatency drops x264's frame lookahead,
+                    # about 800 -> 170 MB of RAM per 1080p encoder, still lossless.
+                    output_dict={"-c:v": "libx264", "-crf": "0", "-pix_fmt": "yuv420p", "-tune": "zerolatency"},
                     overwrite=self.overwrite,
                 )
                 written_frames[global_obj_id] = 0

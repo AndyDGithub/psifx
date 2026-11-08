@@ -1,14 +1,18 @@
 """MediaPipe pose estimation command-line interface."""
 
 import argparse
+import multiprocessing
+import os
 import sys
 import tempfile
+from concurrent.futures import FIRST_EXCEPTION, ProcessPoolExecutor, wait
 from pathlib import Path
 
 import torch
 
 from psifx.utils.command import Command, register_command
 from psifx.video.pose.mediapipe.tool import MediaPipePoseEstimationTool
+from psifx.utils.constants import MEDIAPIPE_HOLISTIC_PATH
 from psifx.video.tracking.tool import TrackingTool
 
 
@@ -82,17 +86,41 @@ class MediaPipeSingleInferenceCommand(Command):
             help="threshold for the binarization of the segmentation mask",
         )
         parser.add_argument(
+            "--model_path",
+            type=str,
+            default=MEDIAPIPE_HOLISTIC_PATH,
+            help="URL or local path of the MediaPipe Holistic Landmarker ``.task`` bundle",
+        )
+        parser.add_argument(
+            "--face_fallback",
+            default=False,
+            action=argparse.BooleanOptionalAction,
+            help="look for the face on a crop placed from the body pose when the Holistic model misses it:"
+            " more faces, but noisier ones",
+        )
+        parser.add_argument(
+            "--min_detection_confidence",
+            type=float,
+            default=0.5,
+            help="minimum score of the body and face detections that start a track",
+        )
+        parser.add_argument(
+            "--min_presence_confidence",
+            type=float,
+            default=0.5,
+            help="minimum score of the body, face and hand landmarks to keep them",
+        )
+        parser.add_argument(
             "--model_complexity",
             type=int,
-            default=2,
-            help="complexity of the model: {0, 1, 2}, higher means more FLOPs, "
-                 "but also more accurate results",
+            default=None,
+            help="ignored since the move to the MediaPipe Tasks API, which has a single Holistic model",
         )
         parser.add_argument(
             "--smooth",
-            default=True,
+            default=None,
             action=argparse.BooleanOptionalAction,
-            help="temporally smooth the inference results to reduce the jitter",
+            help="ignored since the move to the MediaPipe Tasks API, whose video mode always smooths",
         )
         parser.add_argument(
             "--device",
@@ -125,6 +153,10 @@ class MediaPipeSingleInferenceCommand(Command):
 
         def use_mediapipe(args, video_path):
             mediapipe_tool = MediaPipePoseEstimationTool(
+                model_path=args.model_path,
+                face_fallback=args.face_fallback,
+                min_detection_confidence=args.min_detection_confidence,
+                min_presence_confidence=args.min_presence_confidence,
                 model_complexity=args.model_complexity,
                 smooth=args.smooth,
                 device=args.device,
@@ -159,6 +191,25 @@ class MediaPipeSingleInferenceCommand(Command):
                 )
                 del tracking_tool
                 use_mediapipe(args, tmp_dir / args.mask.name)
+
+
+def default_num_workers() -> int:
+    """One worker per 4 cores: MediaPipe already runs a few threads per instance."""
+    return max(1, (os.cpu_count() or 1) // 4)
+
+
+def infer_one_person(video: Path, mask: Path, blackout_path: Path, poses_path: Path, tool_kwargs: dict):
+    """Blacks out everything but one person, then runs MediaPipe on that video. Module level so it pickles."""
+    TrackingTool(device=tool_kwargs["device"], overwrite=tool_kwargs["overwrite"],
+                 verbose=tool_kwargs["verbose"]).visualize(
+        video_path=video,
+        mask_paths=[mask],
+        visualization_path=blackout_path,
+        blackout=True,
+        color=False,
+        labels=False,
+    )
+    MediaPipePoseEstimationTool(**tool_kwargs).inference(video_path=blackout_path, poses_path=poses_path)
 
 
 class MediaPipeMultiInferenceCommand(Command):
@@ -211,17 +262,48 @@ class MediaPipeMultiInferenceCommand(Command):
             help="threshold for the binarization of the segmentation mask",
         )
         parser.add_argument(
+            "--model_path",
+            type=str,
+            default=MEDIAPIPE_HOLISTIC_PATH,
+            help="URL or local path of the MediaPipe Holistic Landmarker ``.task`` bundle",
+        )
+        parser.add_argument(
+            "--face_fallback",
+            default=False,
+            action=argparse.BooleanOptionalAction,
+            help="look for the face on a crop placed from the body pose when the Holistic model misses it:"
+            " more faces, but noisier ones",
+        )
+        parser.add_argument(
+            "--min_detection_confidence",
+            type=float,
+            default=0.5,
+            help="minimum score of the body and face detections that start a track",
+        )
+        parser.add_argument(
+            "--min_presence_confidence",
+            type=float,
+            default=0.5,
+            help="minimum score of the body, face and hand landmarks to keep them",
+        )
+        parser.add_argument(
             "--model_complexity",
             type=int,
-            default=2,
-            help="complexity of the model: {0, 1, 2}, higher means more FLOPs, "
-                 "but also more accurate results",
+            default=None,
+            help="ignored since the move to the MediaPipe Tasks API, which has a single Holistic model",
         )
         parser.add_argument(
             "--smooth",
-            default=True,
+            default=None,
             action=argparse.BooleanOptionalAction,
-            help="temporally smooth the inference results to reduce the jitter",
+            help="ignored since the move to the MediaPipe Tasks API, whose video mode always smooths",
+        )
+        parser.add_argument(
+            "--num_workers",
+            type=int,
+            default=None,
+            help="number of people processed at the same time, in separate processes"
+            " (default: one per 4 CPU cores, at most one per person)",
         )
         parser.add_argument(
             "--device",
@@ -271,34 +353,37 @@ class MediaPipeMultiInferenceCommand(Command):
             else:
                 raise FileNotFoundError(f"{mask} is not a directory or a .mp4 file")
 
-        tracking_tool = TrackingTool(
-            device=args.device,
-            overwrite=args.overwrite,
-            verbose=args.verbose,
-        )
-
-        mediapipe_tool = MediaPipePoseEstimationTool(
+        num_workers = min(args.num_workers or default_num_workers(), len(mask_files))
+        tool_kwargs = dict(
+            model_path=args.model_path,
+            face_fallback=args.face_fallback,
+            min_detection_confidence=args.min_detection_confidence,
+            min_presence_confidence=args.min_presence_confidence,
             model_complexity=args.model_complexity,
             smooth=args.smooth,
             device=args.device,
             overwrite=args.overwrite,
-            verbose=args.verbose,
+            # Progress bars of parallel workers would interleave.
+            verbose=args.verbose if num_workers == 1 else False,
         )
-
         with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_dir = Path(tmp_dir)
-            for mask in mask_files:
-                tracking_tool.visualize(
-                    video_path=args.video,
-                    mask_paths=[mask],
-                    visualization_path=tmp_dir / mask.name,
-                    blackout=True,
-                    color=False,
-                    labels=False,
-                )
-                mediapipe_tool.inference(
-                    video_path=tmp_dir / mask.name,
-                    poses_path=args.poses_dir / f"{mask.stem}.tar.gz",
-                )
-        del tracking_tool
-        del mediapipe_tool
+            jobs = [(args.video, mask, Path(tmp_dir) / mask.name, args.poses_dir / f"{mask.stem}.tar.gz",
+                     tool_kwargs) for mask in mask_files]
+            if num_workers == 1:
+                for job in jobs:
+                    infer_one_person(*job)
+                return
+            # People are independent: one process each, every one writing its own files only.
+            # spawn, not fork: a forked child would inherit the parent's threads and any CUDA state.
+            with ProcessPoolExecutor(num_workers, mp_context=multiprocessing.get_context("spawn")) as pool:
+                futures = {pool.submit(infer_one_person, *job): job[1] for job in jobs}
+                done, _ = wait(futures, return_when=FIRST_EXCEPTION)
+                failed = [f for f in done if f.exception() is not None]
+                if failed:
+                    # Stop before starting the remaining people; running ones finish their own file.
+                    pool.shutdown(wait=True, cancel_futures=True)
+                    raise RuntimeError(f"MediaPipe failed on {futures[failed[0]]}") from failed[0].exception()
+                for future in futures:
+                    future.result()
+                    if args.verbose:
+                        print(f"Poses written for {futures[future].name}")

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from psifx.utils.constants import SAM3_PATH
+from psifx.utils.constants import SAM3_PATH, SAM3_REID_PATH
 from psifx.utils.command import Command, register_command
 from psifx.video.tracking.sam3.tool import Sam3TrackingTool
 
@@ -93,8 +93,33 @@ class Sam3InferenceCommand(Command):
             default=None,
             help=(
                 "optional cap on tracked object count "
-                "(e.g., set to 2 for a two-person interaction)"
+                "(e.g., set to 2 for a two-person interaction); once reached, new tracks take the "
+                "id of the most similar person"
             ),
+        )
+        parser.add_argument(
+            "--shot_threshold",
+            type=float,
+            default=0.15,
+            help=(
+                "frame difference (0.0 to 1.0) above which a new shot starts; tracking restarts at "
+                "each cut, so edited videos do not swap identities (0 disables shot detection)"
+            ),
+        )
+        parser.add_argument(
+            "--reid_threshold",
+            type=float,
+            default=0.45,
+            help=(
+                "minimum appearance similarity (cosine, -1.0 to 1.0) to give a new track the id of a "
+                "person already seen, e.g. after a cut (-1 disables re-identification)"
+            ),
+        )
+        parser.add_argument(
+            "--reid_model_path",
+            type=str,
+            default=SAM3_REID_PATH,
+            help="image encoder used for re-identification (Hugging Face id or local path)",
         )
         parser.add_argument(
             "--device",
@@ -141,6 +166,7 @@ class Sam3InferenceCommand(Command):
             model_path=args.model_path,
             api_token=args.api_token,
             max_num_objects=args.max_num_objects,
+            reid_model_path=args.reid_model_path,
             overwrite=args.overwrite,
             verbose=args.verbose,
         )
@@ -150,5 +176,7 @@ class Sam3InferenceCommand(Command):
             text_prompt=args.text_prompt,
             chunk_size=args.chunk_size,
             iou_threshold=args.iou_threshold,
+            shot_threshold=args.shot_threshold or None,
+            reid_threshold=None if args.reid_threshold <= -1 else args.reid_threshold,
         )
         del tool

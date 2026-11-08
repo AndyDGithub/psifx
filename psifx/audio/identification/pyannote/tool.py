@@ -20,7 +20,11 @@ from pyannote.core import Segment
 
 from psifx.audio.identification.tool import IdentificationTool
 from psifx.io import rttm, json, wav
-from psifx.utils.huggingface import patch_hf_hub_download_use_auth_token
+from psifx.utils.huggingface import (
+    patch_hf_hub_download_use_auth_token,
+    patch_speechbrain_for_hf_hub_1,
+    pyannote_token_kwargs,
+)
 
 def cropped_waveform(
     path: Union[str, Path],
@@ -77,12 +81,17 @@ class PyannoteIdentificationTool(IdentificationTool):
         os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
         self._register_torch_safe_globals()
         patch_hf_hub_download_use_auth_token()
+        patch_speechbrain_for_hf_hub_1()
+        cache_dir = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "psifx"
         try:
             self.models = {
                 name: PretrainedSpeakerEmbedding(
                     embedding=name,
                     device=torch.device(device),
-                    use_auth_token=self.api_token,
+                    # Without it, pyannote 4 saves the speechbrain model under "None/speechbrain"
+                    # in the current directory.
+                    cache_dir=cache_dir,
+                    **pyannote_token_kwargs(self.api_token),
                 )
                 for name in model_names
             }
@@ -128,6 +137,16 @@ class PyannoteIdentificationTool(IdentificationTool):
         segments = rttm.RTTMReader.read(path=diarization_path, verbose=self.verbose)
         dataframe = pd.DataFrame.from_records(segments)
         dataframe["end"] = dataframe["start"] + dataframe["duration"]
+
+        # Each speaker gets its own mono audio: with fewer audios, some speakers would have no mapping
+        # and the transcription enhancement could not name them. Checked before computing embeddings.
+        n_speakers = dataframe["speaker_name"].nunique()
+        if n_speakers > len(mono_audio_paths):
+            raise ValueError(
+                f"The diarization found {n_speakers} speakers but {len(mono_audio_paths)} mono audios were "
+                f"given, one per speaker is needed. Run the diarization again with "
+                f"--num_speakers {len(mono_audio_paths)}, or give one mono audio per speaker."
+            )
 
         for name, model in tqdm(
             self.models.items(),

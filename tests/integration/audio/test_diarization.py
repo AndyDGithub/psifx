@@ -27,7 +27,9 @@ def test_audio_diarization(audio_path: Path, output_dir: Path, diarization_rttm:
     """Test audio diarization."""
 
     pytest.importorskip("pyannote.audio", reason="Pyannote not installed")
-    _require_hf_model_access("pyannote/speaker-diarization")
+    from psifx.audio.diarization.pyannote.tool import default_model_name
+
+    _require_hf_model_access(default_model_name())
 
     diarization_path = output_dir / "diarization.rttm"
 
@@ -43,27 +45,19 @@ def test_audio_diarization(audio_path: Path, output_dir: Path, diarization_rttm:
     assert audio_path.exists(), "Audio extraction failed"
     assert diarization_path.exists(), "Audio diarization failed"
 
-    def parse_rttm_file(path: Path):
-        lines = path.read_text().splitlines()
-        content = []
-        for line in lines:
+    from pyannote.core import Annotation, Segment
+    from pyannote.metrics.diarization import DiarizationErrorRate
+
+    def load_rttm(path: Path) -> Annotation:
+        annotation = Annotation()
+        for line in path.read_text().splitlines():
             parts = line.strip().split()
             assert len(parts) == 10, f"Abnormal rttm line: {parts}"
-            content.append({
-                "start": float(parts[3]),
-                "duration": float(parts[4]),
-                "speaker": parts[7]
-            })
-        return content
+            start, duration = float(parts[3]), float(parts[4])
+            annotation[Segment(start, start + duration)] = parts[7]
+        return annotation
 
-    parsed_lines = parse_rttm_file(diarization_path)
-    expected_entries = parse_rttm_file(diarization_rttm)
-
-    for expected in expected_entries:
-        matched = any(
-            abs(expected["start"] - line["start"]) < 1 and
-            abs(expected["duration"] - line["duration"]) < 1 and
-            expected["speaker"] == line["speaker"]
-            for line in parsed_lines
-        )
-        assert matched, f"Expected segment not found: {expected}"
+    # Speaker names are mapped optimally, and recent models split turns at pauses that the
+    # reference counts as speech: compare with the diarization error rate, not turn by turn.
+    der = DiarizationErrorRate(collar=0.25)(load_rttm(diarization_rttm), load_rttm(diarization_path))
+    assert der < 0.10, f"Diarization error rate {der:.3f} against the reference"

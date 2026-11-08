@@ -42,6 +42,8 @@ Segment and track humans/objects in a video using **SAM3**.
 
 SAM3 supports text-prompted segmentation/tracking and chunked processing for long videos.
 Chunking helps keep memory usage stable by processing frames sequentially and stitching object IDs between chunks.
+Edited videos (talk shows, interviews, films) are handled too: tracking restarts at each shot change, and a person
+who comes back after a cut gets their previous ID back from their appearance.
 
 ```bash
 psifx video tracking sam3 inference \
@@ -51,6 +53,9 @@ psifx video tracking sam3 inference \
     [--chunk_size 300] \
     [--iou_threshold 0.3] \
     [--max_num_objects N] \
+    [--shot_threshold 0.15] \
+    [--reid_threshold 0.45] \
+    [--reid_model_path facebook/dinov2-small] \
     [--device cuda] \
     [--model_path facebook/sam3] \
 ```
@@ -60,13 +65,17 @@ psifx video tracking sam3 inference \
 * `--text_prompt`: Text query describing what to track, default is `"people"`.
 * `--chunk_size`: Number of frames processed per chunk. Lower values reduce peak memory usage.
 * `--iou_threshold`: IoU threshold used to stitch object IDs between adjacent chunks.
-* `--max_num_objects`: Optional cap on total tracked object tracks. Default is no explicit cap.
+* `--max_num_objects`: Optional cap on total tracked object tracks. Default is no explicit cap. Once the cap is reached, a new track takes the ID of the most similar person not visible at the same time.
+* `--shot_threshold`: Mean difference (0 to 1) between two consecutive frames above which a new shot starts. Tracking restarts at each shot, so that two people filmed in alternating close-ups do not swap IDs. `0` disables shot detection.
+* `--reid_threshold`: Minimum appearance similarity (cosine, -1 to 1) for a new track to take the ID of a person already seen, for example after a cut or when someone re-enters the frame. Otherwise the track gets a new ID. `-1` disables re-identification.
+* `--reid_model_path`: Image encoder used to describe appearance (masked person crop), default `facebook/dinov2-small`. You can also set `SAM3_REID_PATH` as an environment variable.
 * `--device`: Device on which to run inference, either `cpu` or `cuda`.
 * `--model_path`: Hugging Face model id or local path for SAM3 weights. You can also set `SAM3_PATH` as an environment variable.
 * `--api_token`: Optional Hugging Face token (defaults to `HF_TOKEN` env var if set).
 
 Notes:
 - If a CUDA chunk still runs out of memory, the tracker automatically retries by splitting that chunk into smaller subchunks.
+- Without the optional `kernels` package, transformers skips SAM3's duplicate-detection removal (NMS) and mask hole filling; psifx then runs built-in PyTorch/SciPy versions of both.
 - For gated models, provide `HF_TOKEN` or use a local model path.
 
 ### Tracking Visualization
@@ -94,7 +103,14 @@ psifx video tracking visualization \
 
 ### Pose Estimation
 
-Detects and analyzes human poses in a video using MediaPipe.
+Detects and analyzes human poses in a video using the MediaPipe Holistic Landmarker (Tasks API): 33 body points
+(also in 3D, see below), 478 face points (mesh and irises) and 21 points per hand. The model bundle
+(`holistic_landmarker.task`, 14 MB) is downloaded to `~/.cache/psifx/mediapipe` on first use; the
+`MEDIAPIPE_HOLISTIC_PATH` environment variable or `--model_path` points to another copy, for offline use.
+MediaPipe needs the system libraries `libEGL.so.1` and `libGLESv2.so.2` (Ubuntu packages `libegl1` and `libgles2`).
+
+Besides the 2D parts, each frame holds `pose_keypoints_3d`: the 33 body points as `[x, y, z, visibility]` in meters,
+with the origin between the hips (MediaPipe *world landmarks*).
 
 There are two methods for whether the video contains a single person or multiple people.
 
@@ -132,16 +148,42 @@ These arguments can be used in both the above commands to configure the inferenc
 
 ```bash
     [--mask_threshold 0.1] \
-    [--model_complexity 2] \
-    [--smooth] \
+    [--model_path holistic_landmarker.task] \
+    [--face_fallback] \
+    [--min_detection_confidence 0.5] [--min_presence_confidence 0.5] \
     [--device cuda]
 ```
 
 - `--mask_threshold`: Threshold for the binarization of the segmentation mask, default `0.1`.
-- `--model_complexity`: Complexity of the model: {`0`, `1`, `2`}, higher means more FLOPs, but also more accurate
-  results, default `2`.
-- `--smooth`: Temporally smooth the inference results to reduce the jitter, default `True`.
+- `--model_path`: URL or local path of the Holistic Landmarker bundle, by default the float16 model of Google.
+- `--min_detection_confidence`, `--min_presence_confidence`: Minimum scores of the detections that start a track
+  (body, face) and of the landmarks that are kept (body, face, hands), default `0.5`.
+- `--face_fallback`: Look for the face on a crop placed from the body pose when the Holistic model misses it, with
+  the MediaPipe Face Landmarker (`face_landmarker.task`, 4 MB, downloaded on first use). The Tasks Holistic model
+  misses many medium-size faces that the legacy one found (AVA clip: face in 43 % of the frames instead of 80 %);
+  the fallback brings it back to 74 %, but the extra faces give a noisier mouth signal. Off by default.
+- `--model_complexity`, `--smooth`: Ignored since the move to the Tasks API, which has a single Holistic model and
+  always tracks and smooths in video mode. They are kept so that existing scripts still run.
 - `--device`: Device on which to run the inference, either `cpu` or `cuda`, by default `cuda` if available.
+
+#### Body pose: RTMO or ViTPose
+
+`psifx video pose body` estimates the 17 COCO body keypoints with a choice of model, RTMO by default. It takes the
+same `single-inference` / `multi-inference` arguments as MediaPipe and writes the same archive format; each model
+is described in its own section below, with its options.
+
+```bash
+psifx video pose body single-inference \
+    --video Video.mp4 \
+    --poses Poses.tar.gz \
+    [--mask Mask.mp4] \
+    [--model rtmo]
+```
+
+- `--model`: `rtmo` (default; fast, needs `pip install 'psifx[rtm]'`) or `vitpose` (most accurate, no extra
+  dependency).
+- RTMO options: `--mode`, `--precision`; ViTPose options: `--model_name`, `--detector_name`,
+  `--detection_threshold` (see below).
 
 #### RTMO
 

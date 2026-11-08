@@ -84,14 +84,20 @@ psifx audio diarization pyannote inference \
     [--num_speakers 2] \
     [--device cuda] \
     [--api_token hf_SomeLetters] \
-    [--model_name pyannote/speaker-diarization@2.1.1]
+    [--model_name pyannote/speaker-diarization-community-1] \
+    [--min_speakers 1] [--max_speakers 4] \
+    [--exclusive]
 ```
 - `--audio`: Input audio file for diarization.
 - `--diarization`: Path to save diarization results in `.rttm` format.
 - `--num_speakers`: Number of speakers to identify.
+- `--min_speakers`, `--max_speakers`: Bounds on the number of speakers, when it is not known exactly.
+- `--exclusive`: Keep a single speaker at a time (pyannote.audio 4 only). Overlapped speech goes to one speaker, which simplifies the alignment with a transcription.
 - `--device`: Processing device (`cuda` for GPU, `cpu` for CPU), default `cpu`.
 - `--api_token`: Hugging Face token, may be required to download the model. Can also be provided as the environment variable **HF_TOKEN**.
-- `--model_name`: Name of the diarization model used, default `pyannote/speaker-diarization@2.1.1`.
+- `--model_name`: Name of the diarization model used. The default is `pyannote/speaker-diarization-community-1` with pyannote.audio 4 and `pyannote/speaker-diarization-3.1` with pyannote.audio 3. Accept the model conditions on Hugging Face with the account of the token first. With pyannote.audio 4, even the 3.1 pipeline downloads files from the community-1 repository.
+
+pyannote.audio 4 sends anonymous usage metrics (model name, audio duration) to pyannoteAI by default. psifx turns them off; set `PYANNOTE_METRICS_ENABLED=1` to opt in.
 
 ### Speaker Identification
 Associates speakers in a mixed audio file with known audio samples. This combines the mixdown file with the individual channels of audio, and performs re-embedding and clustering, using the names of the individual audio files to assign identities in the identification out json. The purpose is (a) to improve diarization, and (b) to provide a mapping from the allocated/detected speakers from in the diarization process to enhance the transcription with.

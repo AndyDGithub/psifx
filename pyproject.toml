@@ -52,5 +52,6 @@ testpaths = ["tests"]
 markers = [
   "unit: Unit tests",
   "integration: Integration tests",
-  "structure: Project structure checks"
+  "structure: Project structure checks",
+  "dataset: Needs an external dataset (e.g. OCHUMAN_ROOT), run with -m dataset"
 ]

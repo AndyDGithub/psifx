@@ -12,6 +12,8 @@ RUN apt-get -y update && \
         htop \
         libboost-all-dev \
         libdlib-dev \
+        libegl1 \
+        libgles2 \
         libopenblas-dev \
         libopencv-dev \
         libopencv-calib3d-dev \
@@ -66,6 +68,7 @@ RUN mkdir --parents $HOME $HOME/.config $HOME/.cache && \
         --minimal_install \
         --no-add_to_login_shell && \
     rm install.py && \
+    bash $PSIFX_PREFIX/docker/check_openface_models.sh $OPENFACE_PREFIX && \
     pip install --no-cache-dir $PSIFX_PREFIX && \
     rm -r $PSIFX_PREFIX && \
     pip cache purge && \
