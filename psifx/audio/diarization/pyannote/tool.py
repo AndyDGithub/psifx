@@ -21,7 +21,7 @@ def default_model_name() -> str:
     """
     community-1 (2025) with pyannote.audio 4, which needs it; the legacy 3.1 pipeline otherwise.
 
-    community-1 counts speakers better in noise and on films (see research/08_diarization_community1.md).
+    community-1 counts speakers better in noise and on films.
     """
     if int(version("pyannote.audio").split(".")[0]) >= 4:
         return "pyannote/speaker-diarization-community-1"
