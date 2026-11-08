@@ -8,7 +8,7 @@ scored with COCO OKS / PCK@0.2 (see tests/pose_eval/psifx_eval.py).
 
 Every pose tool is evaluated the same way, so a new model can be compared
 directly to the one it replaces. To add a tool: register its COCO-17 adapter in
-``tests.pose_eval.psifx_eval.ADAPTERS`` and its minimum scores in ``MIN_SCORES`` below.
+``tests.pose_eval.psifx_eval.ADAPTERS`` and its minimum scores in ``CASES`` below.
 """
 
 from pathlib import Path
@@ -20,13 +20,16 @@ from tests.integration.conftest import run_command
 
 COCO_DIR = Path(__file__).resolve().parents[1] / "data" / "CocoPose"
 
-# tool -> (required module, minimum OKS, minimum PCK@0.2, extra CLI args).
+# test id -> (tool, required module, minimum OKS, minimum PCK@0.2, extra CLI args).
 # Minimums sit a few points under the measured score: they catch regressions,
 # not small run-to-run noise.
-MIN_SCORES = {
-    "mediapipe": ("mediapipe", 0.60, 0.90, []),  # measured: OKS 0.647, PCK 0.968
-    "rtmo": ("rtmlib", 0.89, 0.95, []),  # measured: OKS 0.943, PCK 1.000
-    "vitpose": ("transformers", 0.89, 0.93, []),  # measured: OKS 0.943, PCK 0.988
+CASES = {
+    "mediapipe": ("mediapipe", "mediapipe", 0.60, 0.90, []),  # measured: OKS 0.713, PCK 0.985 (Tasks API; legacy 0.647, 0.968)
+    "rtmo": ("rtmo", "rtmlib", 0.89, 0.95, []),  # measured: OKS 0.943, PCK 1.000
+    "vitpose": ("vitpose", "transformers", 0.89, 0.93, []),  # measured: OKS 0.943, PCK 0.988
+    # psifx video pose body must give the same scores as the model it runs.
+    "body-default-rtmo": ("body", "rtmlib", 0.89, 0.95, []),
+    "body-vitpose": ("body", "transformers", 0.89, 0.93, ["--model", "vitpose"]),
 }
 
 
@@ -40,12 +43,12 @@ def coco_video(tmp_path_factory):
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("tool", sorted(MIN_SCORES))
-def test_pose_tool_coco_accuracy(tool, coco_video, output_dir):
-    module, min_oks, min_pck, extra = MIN_SCORES[tool]
+@pytest.mark.parametrize("case", sorted(CASES))
+def test_pose_tool_coco_accuracy(case, coco_video, output_dir):
+    tool, module, min_oks, min_pck, extra = CASES[case]
     pytest.importorskip(module, reason=f"{module} not installed")
     video_path, ground_truth = coco_video
-    poses_path = output_dir / f"{tool}.tar.gz"
+    poses_path = output_dir / f"{case}.tar.gz"
 
     run_command(
         "psifx", "video", "pose", tool, "single-inference",
@@ -55,6 +58,6 @@ def test_pose_tool_coco_accuracy(tool, coco_video, output_dir):
     )
 
     scores = evaluate_archive(poses_path, ground_truth, tool)
-    print(f"\n[{tool}] {scores}")
-    assert scores["oks"] >= min_oks, f"{tool} OKS {scores['oks']:.3f} < {min_oks}"
-    assert scores["pck"] >= min_pck, f"{tool} PCK {scores['pck']:.3f} < {min_pck}"
+    print(f"\n[{case}] {scores}")
+    assert scores["oks"] >= min_oks, f"{case} OKS {scores['oks']:.3f} < {min_oks}"
+    assert scores["pck"] >= min_pck, f"{case} PCK {scores['pck']:.3f} < {min_pck}"
