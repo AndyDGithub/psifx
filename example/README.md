@@ -155,7 +155,7 @@ psifx video pose mediapipe visualization \
 ```
 ### Several people
 With the SAM3 masks, estimate one pose per tracked person, with MediaPipe (body, face and hands)
-and with RTMO (body only, sturdier on hard poses). Each command writes one archive per person.
+and with ViTPose (body only, the most accurate). Each command writes one archive per person.
 ```bash
 psifx video pose mediapipe multi-inference \
     --video Video.mp4 \
@@ -169,7 +169,7 @@ psifx video pose body multi-inference \
     --video Video.mp4 \
     --masks masks \
     --poses_dir PosesBody \
-    --model rtmo \
+    --model vitpose \
     --device cuda --overwrite
 psifx video pose body visualization \
     --video Video.mp4 \
@@ -178,6 +178,11 @@ psifx video pose body visualization \
 ```
 MediaPipe runs on the CPU only; `multi-inference` processes several people at the same time
 (`--num_workers`, by default one per 4 CPU cores).
+
+On 200 hand-annotated frames of a talk show (2 to 4 people), ViTPose found the body points best
+(OKS 0.89, against 0.74 for RTMO and 0.69 for MediaPipe). It is also about twice as slow as RTMO:
+for a faster run, use `--model rtmo --precision fp16`. MediaPipe remains the one for the face,
+the hands and 3D points.
 
 ### Face
 Extract facial features from the video using OpenFace.
@@ -245,9 +250,12 @@ psifx audio manipulation normalization \
 
 
 ### Speaker Diarization
-Identifies segments for each speaker in the audio file. Give the number of speakers when you know
-it: the identification below needs exactly one mono audio per speaker, and without this option the
-model may hear an extra voice (a jingle, a short off-screen voice).
+Identifies segments for each speaker in the audio file. Here, `--num_speakers 2` matches the two
+lavalier microphones: the identification below needs exactly one mono audio per speaker, and
+without this option the model may hear an extra voice (a jingle, a short off-screen voice).
+On a recording without one microphone per person, leave the option out: counting the speakers
+itself, the model was closer to the real speaker turns on a talk show than when forced to a
+number.
 ```bash
 psifx audio diarization pyannote inference \
     --audio Audio.wav \
@@ -266,7 +274,9 @@ psifx audio diarization visualization \
 ### Speaker Identification
 Associates speakers in a mixed audio file with known audio samples. It needs one microphone per
 person, as the two lavalier channels of this example; on a recording with a single microphone,
-the left and right channels carry the same voices and the mapping is meaningless.
+the left and right channels carry the same voices and the mapping is meaningless (on a talk show,
+its agreement score was 0.52, chance level). The enhanced transcription below still needs its
+output, but its speaker names then tell nothing about who is who.
 ```bash
 psifx audio identification pyannote inference \
     --mixed_audio Audio.wav \
@@ -276,11 +286,15 @@ psifx audio identification pyannote inference \
 ``` 
 
 ### Speech Transcription
-Transcribe speech in the audio file to text.
+Transcribe speech in the audio file to text. Give the language of the recording (`en` here, `fr`
+for French, ...): guessed, it can be wrong on the first seconds. `large-v3-turbo` handles every
+language; the default model, `distil-large-v3`, only English.
 ```bash
 psifx audio transcription whisperx inference \
     --audio Audio.wav \
-    --transcription Transcription.vtt
+    --transcription Transcription.vtt \
+    --model_name large-v3-turbo \
+    --language en
 ```
 
 ### Enhanced Transcription
