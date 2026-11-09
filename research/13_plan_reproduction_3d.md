@@ -1,7 +1,7 @@
 # Plan : reproduire une vidéo avec des avatars 3D, et retirer l'apparence
 
 Date : 2026-11-09. Statut : plan révisé après retour, à valider avec les encadrants. Point de départ : `dev` au tag
-`tm-v1-optimisations`. Échéance de travail : fin décembre 2026, soit environ 7 semaines, rédaction comprise.
+`tm-v1-optimisations`. Échéance de travail : fin décembre 2026. Le rapport s'écrit au fil du travail, idées abandonnées comprises.
 
 ## 1. Les objectifs
 
@@ -93,21 +93,20 @@ Les incrustations visibles dans certains fonds (groupe 0) sont à corriger.
 
 ## 3. Veille
 
-### 3.1 Ce que les VTubers apportent
+### 3.1 Idée examinée et abandonnée : s'inspirer des VTubers
 
-Une chaîne VTuber ne reconstruit pas tout le corps à chaque image. Elle extrait peu de signaux, très vite, et les envoie
-à un personnage déjà riggé :
+Idée du 2026-11-09 : un VTuber anime un modèle 3D avec une seule caméra, pourquoi pas nous ? Elle est écartée pour
+deux raisons :
 
-| Idée | Chez les VTubers | Transposition ici | Précaution |
-|---|---|---|---|
-| Visage par coefficients | 52 coefficients façon ARKit depuis une webcam, via MediaPipe (VPuppet, XR Animator) | Activer ces coefficients dans psifx, où ils ne sont pas demandés aujourd'hui, et les convertir vers les 72 expressions de MHR | Conditions différentes : VTuber de face et proche ; ici trois-quarts et **micro devant la bouche**. Carte du modèle : écart absolu moyen de 0,199. Aucune évaluation indépendante trouvée |
-| Séparer identité et mouvement | Le modèle est fixe, seul le mouvement change | Morphologie verrouillée par personne, ce qui rend aussi la morphologie neutre triviale | – |
-| Calcul léger à chaque image | Quelques ms par image pour le visage (chiffres non vérifiés) | **Hybride à tester :** SAM 3D Body sur des images clés, signaux légers entre deux | À mesurer : les gestes rapides peuvent se perdre |
-| Corps complet | Les guides disent que la webcam est le niveau le plus faible, et qu'un suivi précis passe par des capteurs (SteamVR, Rokoko, mocopi) | Ne pas compter sur MediaPipe seul pour le corps : OKS 0,69 ici | Le montage de Filian n'est pas documenté dans mes sources, je ne peux rien en dire |
+- **Les conditions sont trop différentes.** Un VTuber classique est proche de sa caméra, de face, et sa chaîne peut
+  s'appuyer sur ces hypothèses. psifx doit rester fiable dans la majorité des situations : plans larges, trois-quarts,
+  micro devant la bouche.
+- **Les cas impressionnants ne viennent pas de la caméra.** Une VTubeuse comme Filian se déplace beaucoup dans l'espace
+  avec un casque VR et des manettes : d'après le souvenir de l'auteur (non documenté dans mes sources), ce sont les
+  capteurs qui portent le suivi. Les guides confirment que la webcam est le niveau le plus faible pour le corps entier.
 
-Le gain réel reste à mesurer, et il n'est pas acquis : une image sur 10 coûterait environ 22 min au lieu de 1 h 48 (calcul,
-pas mesure), plus le coût de l'ajustement. Pour la thèse, l'intérêt dépasse la vitesse : un visage à coefficients et un corps
-paramétrique sont exactement ce qui sépare l'identité du comportement.
+**Ce qu'il en reste, indépendamment de cette piste :** séparer l'identité du mouvement, ce que MHR fait déjà. Un essai
+des coefficients de visage de MediaPipe n'est plus prévu, sauf si les `expr_params` de MHR se révèlent insuffisants.
 
 ### 3.2 Autres briques
 
@@ -141,8 +140,7 @@ vidéo ─► plans ─► groupes de caméra (points clés du décor) ─► fo
   │                                                                                  ▼
   ├─► SAM3 ─► pistes ─► personnes fusionnées ─────────────────────────────────────► SCÈNE ─► vidéo reproduite
   │                                                                                  ▲  ├─► mesures d'utilité
-  ├─► SAM 3D Body (images clés ou toutes) ─► paramètres MHR ─► lissage ──────────────┤  └─► mesures de confidentialité
-  ├─► MediaPipe, ViTPose (signaux légers) ───────────────────────────────────────────┤
+  ├─► SAM 3D Body ─► paramètres MHR ─► lissage ─────────────────────────────┤  └─► mesures de confidentialité
   └─► audio ─► diarisation, transcription, voix ↔ personne ──────────────────────────┘
 ```
 
@@ -171,23 +169,19 @@ scene/
 | A3 | Avatar à morphologie moyenne | Fond de scène | Retire la silhouette |
 | A4 | Avatar à morphologie moyenne | Décor minimal | Retire aussi le lieu |
 
-## 5. Jalons et calendrier
+## 5. Fil rouge et étapes
 
-Une branche par jalon. Les seuils sont des propositions, à ajuster sur les premières mesures. Pour aller vite, le
-développement se fait sur un extrait de 30 s, le talk-show complet servant aux mesures.
+Ce travail change souvent de direction : un problème imprévu, une piste qui s'arrête, une nouvelle idée. Il n'y a donc
+**pas de calendrier par semaine**, seulement un ordre et une échéance :
 
-| Semaine | Jalon |
-|---|---|
-| 9–15 nov | 0 et 1 : paramètres, plans, caméras, personnes |
-| 16–22 nov | 2 : cohérence temporelle, visage, hybride |
-| 23–29 nov | 3 et 4 : caméras, fonds, **première vidéo reproduite** |
-| 30 nov–6 déc | 5 : niveaux d'apparence et mesures d'utilité |
-| 7–13 déc | 6 : confidentialité, autres vidéos |
-| 14–20 déc | 7 : rapport, commandes si le temps le permet |
-| 21–31 déc | Marge |
+1. **Rendre les données exploitables :** paramètres, caméras, personnes, stabilité.
+2. **Les montrer :** la vidéo reproduite, preuve de l'objectif de base.
+3. **Mesurer :** ce qui reste du comportement, et ce qui reste de l'identité.
+4. **Élargir :** autres vidéos, commandes psifx.
 
-**Si le retard s'accumule, on coupe dans cet ordre :** commandes psifx, vidéos V2 et V4, hybride, niveau A4. L'objectif de
-base (fin novembre) et les mesures A2/A3 restent le minimum à livrer.
+Si le temps manque, l'étape 4 saute d'abord. Les seuils sont des propositions, à ajuster sur les premières mesures. Une
+branche et une note par étape, et le rapport avance en même temps : **ce qu'on a pensé, fait ou abandonné y est tracé au
+moment où ça arrive**.
 
 ### Jalon 0 : garder les paramètres
 
@@ -198,23 +192,31 @@ base (fin novembre) et les mesures A2/A3 restent le minimum à livrer.
 
 ### Jalon 1 : plans, caméras, personnes
 
-- Consolider `decor_cameras.py` : logos, transitions animées, inserts écartés, cadrages voisins reliés.
-- Fusionner les pistes d'une même personne : apparence, morphologie, et deux pistes visibles dans la même image ne
-  peuvent pas être la même personne.
+**Réduire les limites du décor**, du plus simple au plus coûteux :
 
-**Sortie :** sur un échantillon annoté à la main, plus de 95 % des plans dans le bon groupe et des images attribuées à la
-bonne personne.
+| Limite observée | Piste simple | Si ça ne suffit pas |
+|---|---|---|
+| Logo relié à sa version agrandie | Trouver les zones identiques à travers **tous** les plans, puis les masquer, au lieu de boîtes écrites à la main | Vérifier que les points liés sont répartis dans l'image, pas tous sur un même graphisme |
+| Plans d'incrustation (logo plein écran, vidéos insérées) | Plan sans personne suivie, ou sans lien vers les autres : le marquer `incrustation` et ne pas lui donner de fond | Classer le plan à l'aide de SAM3 |
+| Transition animée (filé de zoom) | Mesurer le flou et le mouvement du décor dans le plan | Reprendre le détecteur de `reid.py` |
+| Un cadrage trop proche d'un autre sépare une même caméra en plusieurs groupes | Relier les groupes dont l'homographie est un zoom (points déjà disponibles) | Clustering sur la matrice des liens |
+| Trou du fond derrière la personne | Fusionner les fonds des cadrages reliés, puis remplissage OpenCV : l'avatar couvre le reste | Modèle d'inpainting vidéo (ProPainter : licence non commerciale, à éviter si possible) |
+| Vérification à l'œil sur quelques plans seulement | Annoter à la main le groupe de chaque plan (86 plans, quelques minutes) | – |
 
-### Jalon 2 : cohérence temporelle, visage, hybride
+**Personnes :** fusionner les pistes d'une même personne : apparence, morphologie, et deux pistes visibles dans la même
+image ne peuvent pas être la même personne.
+
+**Sortie :** plus de 95 % des plans dans le bon groupe et des images attribuées à la bonne personne, sur les annotations.
+
+### Jalon 2 : cohérence temporelle et visage
 
 - Morphologie et échelle par personne : médiane contre première image.
 - Lissage plan par plan : Kalman contre fenêtre glissante.
-- Visage : mesurer `expr_params`, puis les coefficients MediaPipe convertis vers MHR, en particulier avec le micro devant la bouche.
-- Hybride : SAM 3D Body une image sur 10, puis interpolation seule (plancher), puis ajustement sur ViTPose. Regarder si
-  `pymomentum`, la bibliothèque de MHR, fournit le solveur nécessaire.
+- Visage : mesurer `expr_params`, en particulier avec le micro devant la bouche.
+- Fréquence : une image sur 2 suffit-elle ? Une sur 5, avec interpolation, tiendrait-elle ? Le coût baisserait d'autant.
 
-**Sortie :** accélération médiane divisée par au moins 2 et OKS en baisse de moins de 0,01. L'hybride n'est adopté que s'il
-tient ce même seuil aux images annotées non clés. La borne sur l'OKS protège contre un lissage qui effacerait les gestes.
+**Sortie :** accélération médiane divisée par au moins 2 et OKS en baisse de moins de 0,01. La borne sur l'OKS protège
+contre un lissage qui effacerait les gestes.
 
 ### Jalon 3 : caméras et fonds
 
@@ -259,10 +261,9 @@ Principe : passer les outils d'analyse sur la vidéo reproduite, puis comparer �
 - **Hors mesure, à documenter :** la voix, le contenu de la parole et le lieu identifient aussi. La vidéo garde le son pour
   l'objectif de base, et une version sans son s'impose pour tout partage.
 
-### Jalon 7 : consolidation
+### Jalon 7 : élargir
 
 - Tenue sur V1 (caméra fixe), V2 (film) et V4 (danse).
-- Note et rapport (version 6 du PDF).
 - Commandes psifx si le format est stable : `psifx video mesh sam3d_body inference`, `psifx scene build`, `psifx scene render`.
 
 ## 6. Risques
@@ -272,7 +273,7 @@ Principe : passer les outils d'analyse sur la vidéo reproduite, puis comparer �
 | Le mouvement seul identifie la personne | L'objectif de confidentialité reste partiel | C'est un résultat à publier tel quel : on mesure, et on dit ce qui reste |
 | Le micro cache la bouche | Lèvres fausses, utilité faible sur ce point | Mesure dédiée, statut par image |
 | Lissage qui efface les gestes | Comportement faussé | Garde-fou OKS, gestes marqués à la main |
-| Sept semaines, rédaction comprise | Objectif de thèse incomplet | Ordre de coupe défini en section 5 |
+| Échéance de fin décembre, et direction qui peut encore changer | Objectif de thèse incomplet | Priorités du fil rouge (section 5) |
 | Corpus d'identités non disponible | Pas de mesure de confidentialité chiffrée | Le choisir dès novembre, en parallèle |
 | Usage de vraies données | Question éthique et légale | Vidéos publiques pour le développement. Avis de l'institution avant toute donnée de participants |
 | Dépendances : modèle à accès restreint, code non packagé | Installation fragile | Environnement `sam3d-body` figé, commit du clone noté |
@@ -290,14 +291,16 @@ Principe : passer les outils d'analyse sur la vidéo reproduite, puis comparer �
 **Prises le 2026-11-09 :**
 
 1. Reproduction basique : décor minimal ou repris de la vidéo, sans point de vue libre.
-2. Le but de la reproduction : prouver que les données sont exploitables et donner aux chercheurs un support visuel.
+2. But de la reproduction : prouver que les données sont exploitables et donner aux chercheurs un support visuel.
 3. Retirer l'apparence est retenu comme piste d'objectif de thèse.
-4. Échéance : fin décembre.
+4. Échéance : fin décembre. Pas de calendrier par semaine, un fil rouge.
+5. Piste VTuber abandonnée. Piste des points clés du décor à creuser.
 
 **Restent ouvertes :**
 
-1. Confirmation de l'objectif de thèse par les encadrants.
-2. Corpus d'au moins dix identités pour la confidentialité.
+1. Confirmation de l'objectif de thèse à la réunion du 2026-11-09.
+2. Corpus d'identités. L'auteur a peut-être un jeu de données à proposer. Candidat principal : Face-to-Face with Jimmy
+   Fallon (environ 70 h, identités de l'invité et de l'animateur, licence à vérifier).
 
 ## Sources
 
@@ -307,11 +310,9 @@ Principe : passer les outils d'analyse sur la vidéo reproduite, puis comparer �
   https://raw.githubusercontent.com/gaomingqi/sam-body4d/master/assets/doc/resources.md
 - Lissage dans l'espace MHR : https://www.emergentmind.com/papers/2512.21573,
   https://docs.comfy.org/built-in-nodes/SAM3DBody_Smooth.md
-- VTubers : https://gg.deals/application/vpuppet/, https://devlibrary.withgoogle.com/products/ml/repos/yeemachine-kalidokit,
-  https://80.lv/articles/full-body-motion-tracking-for-vtubers-using-only-your-webcam,
-  https://mocaponline.com/blogs/mocap-news/vtuber-motion-capture-guide, https://jisaku.com/posts/vtuber-tracking-setup-guide
-- Coefficients de visage : https://ar5iv.labs.arxiv.org/html/2309.05782,
-  https://dcmpx.remotevs.com/com/googleapis/storage/SL/mediapipe-assets/Model%20Card%20Blendshape%20V2.pdf (miroir de la carte Google)
+- VTubers : https://mocaponline.com/blogs/mocap-news/vtuber-motion-capture-guide, https://jisaku.com/posts/vtuber-tracking-setup-guide
+- Corpus : https://arxiv.org/abs/2603.14794, https://arxiv.org/abs/2211.04656, https://arxiv.org/pdf/2007.01216v3.pdf
+- Inpainting : https://ar5iv.labs.arxiv.org/html/2309.03897
 - Correspondance d'images : https://arxiv.org/pdf/2306.13643, https://arxiv.org/html/2602.08430v1
 - Vidéos montées et repère monde : https://arxiv.org/abs/2503.07597, https://arxiv.org/pdf/2610.19729,
   https://openaccess.thecvf.com/content/CVPR2025/papers/Wang_PromptHMR_Promptable_Human_Mesh_Recovery_CVPR_2025_paper.pdf,
