@@ -249,17 +249,58 @@ Principe : passer les outils d'analyse sur la vidéo reproduite, puis comparer �
 
 ### Jalon 6 : confidentialité
 
-| Attaque | Mesure |
-|---|---|
-| Visage | Reconnaissance faciale, de l'original vers le rendu |
-| Corps | Réidentification sur l'apparence et la silhouette |
-| Mouvement | Réidentification à partir de la seule pose : borne ce que l'avatar ne peut pas retirer |
+**Principe :** jouer l'attaquant. Un modèle de réidentification reçoit une vidéo modifiée et classe une galerie de
+personnes connues. Le **Rank-1** est la part des cas où la bonne personne arrive en tête.
 
-- **Il faut un corpus :** avec deux personnes, le hasard donne déjà 50 % et les résultats ne disent rien. Il faut au moins une
-  dizaine d'identités, le choix du corpus reste à faire.
-- **Les personnes filmées sont célèbres** sur le talk-show : c'est un cas de développement, pas d'évaluation.
-- **Hors mesure, à documenter :** la voix, le contenu de la parole et le lieu identifient aussi. La vidéo garde le son pour
-  l'objectif de base, et une version sans son s'impose pour tout partage.
+**Corpus : MEVID**, partie test (choix du 2026-11-09). Données MEVA sous CC BY 4.0, avec actrices et acteurs inscrits.
+
+| Partie test | Valeur |
+|---|---|
+| Identités | 54 (52 dans les requêtes) |
+| Pistes | 316 requêtes, 1 438 en galerie |
+| Images | 1,19 million |
+| Hasard | **Rank-1 de 1,7 %** (calculé sur ces listes, mêmes personne et caméra exclues) |
+| Requêtes avec une autre tenue en galerie | 284 sur 316 |
+
+Pourquoi MEVID plutôt que MARS, pourtant plus grand (1 261 identités) : chaque personne y porte environ 4 tenues. On peut
+donc séparer ce qui vient des vêtements de ce qui vient du corps et du mouvement. Son point faible : on y marche, on n'y
+converse pas.
+
+**Niveaux :** N0 vidéo d'origine, N1 flou gaussien sur le visage, N2 avatar avec sa morphologie, N3 avatar à morphologie moyenne.
+
+**Attaquants :**
+
+| Attaquant | Ce qu'il a | Ce que ça mesure |
+|---|---|---|
+| Naïf | Galerie d'origine, modèle entraîné sur de vraies vidéos | Ce que l'apparence seule laisse passer. **Le plus faible : un score bas ne prouve rien à lui seul** |
+| Informé | Galerie passée au même traitement | Ce qui reste commun aux avatars d'une même personne : morphologie et mouvement |
+| Démarche | Modèle de démarche (GaitBase d'OpenGait, licence à vérifier) | La signature du mouvement, qu'un modèle d'apparence ne voit pas |
+| Adaptatif (si le temps le permet) | Modèle réentraîné sur des avatars | Le pire cas réaliste. En voix, ce type d'attaquant fait nettement mieux que les autres (VoicePrivacy 2020) |
+
+**Déroulement :**
+
+1. Modèle d'attaque : d'abord CAL, le meilleur publié sur MEVID, avec ses poids. **Retrouver ses 52,5 % de Rank-1 (mAP 27,1)
+   avant toute autre mesure :** c'est la vérification que notre évaluation est juste. OSNet ensuite, en second avis.
+2. Rendre une fenêtre de 32 images consécutives par piste : 1,9 h pour les requêtes et 8,7 h pour la galerie, à 0,69 s par image
+   (à remesurer, les images sont plus petites). Tout rendre prendrait 39 h pour les seules requêtes.
+3. Publier Rank-1, mAP et la courbe CMC, séparés entre même tenue et autre tenue, avec un intervalle de confiance par identité.
+
+**Trois précautions de lecture :**
+
+- **Un avatar raté donne aussi le hasard.** La confidentialité ne se lit jamais seule : il faut vérifier sur ces mêmes images que
+  le maillage suit bien la personne (points reprojetés contre ViTPose sur l'original) et, si les images sont trop petites pour
+  SAM 3D Body, le dire. C'est le risque principal de ce corpus.
+- **Le hasard pour un modèle d'apparence ne prouve pas l'absence de fuite.** Il ne regarde pas le mouvement.
+- **Un score de démarche au-dessus du hasard n'est pas un défaut à corriger.** C'est le prix de l'utilité : conserver le mouvement,
+  c'est conserver ce qui identifie. Le résultat attendu est un compromis chiffré, et perturber le mouvement est une piste séparée.
+
+**Hors de cette mesure :**
+
+- Marcher n'est pas converser : le protocole mesure le pire cas pour la démarche, pas l'identification par les gestes d'une
+  conversation. L'utilité reste mesurée sur le talk-show.
+- La voix et le contenu de la parole identifient aussi. MEVID n'a pas de son utile ici : à documenter, pas à mesurer.
+- Le flou du niveau N1 demande un détecteur de visage. Sur ces images, il peut échouer souvent, ou n'avoir aucun effet : c'est à
+  mesurer, et ce serait déjà un résultat.
 
 ### Jalon 7 : élargir
 
@@ -274,7 +315,7 @@ Principe : passer les outils d'analyse sur la vidéo reproduite, puis comparer �
 | Le micro cache la bouche | Lèvres fausses, utilité faible sur ce point | Mesure dédiée, statut par image |
 | Lissage qui efface les gestes | Comportement faussé | Garde-fou OKS, gestes marqués à la main |
 | Échéance de fin décembre, et direction qui peut encore changer | Objectif de thèse incomplet | Priorités du fil rouge (section 5) |
-| Corpus d'identités non disponible | Pas de mesure de confidentialité chiffrée | Le choisir dès novembre, en parallèle |
+| Images MEVID trop petites pour SAM 3D Body | Confidentialité non mesurable, ou faussement bonne | Contrôle de qualité avant toute mesure. Repli : un corpus plus proche, comme Face-to-Face with Jimmy Fallon |
 | Usage de vraies données | Question éthique et légale | Vidéos publiques pour le développement. Avis de l'institution avant toute donnée de participants |
 | Dépendances : modèle à accès restreint, code non packagé | Installation fragile | Environnement `sam3d-body` figé, commit du clone noté |
 
@@ -295,12 +336,11 @@ Principe : passer les outils d'analyse sur la vidéo reproduite, puis comparer �
 3. Retirer l'apparence est retenu comme piste d'objectif de thèse.
 4. Échéance : fin décembre. Pas de calendrier par semaine, un fil rouge.
 5. Piste VTuber abandonnée. Piste des points clés du décor à creuser.
+6. Corpus de confidentialité : MEVID, préféré à MARS, qui a été examiné, pour ses tenues multiples.
 
 **Restent ouvertes :**
 
 1. Confirmation de l'objectif de thèse à la réunion du 2026-11-09.
-2. Corpus d'identités. L'auteur a peut-être un jeu de données à proposer. Candidat principal : Face-to-Face with Jimmy
-   Fallon (environ 70 h, identités de l'invité et de l'animateur, licence à vérifier).
 
 ## Sources
 
@@ -311,7 +351,8 @@ Principe : passer les outils d'analyse sur la vidéo reproduite, puis comparer �
 - Lissage dans l'espace MHR : https://www.emergentmind.com/papers/2512.21573,
   https://docs.comfy.org/built-in-nodes/SAM3DBody_Smooth.md
 - VTubers : https://mocaponline.com/blogs/mocap-news/vtuber-motion-capture-guide, https://jisaku.com/posts/vtuber-tracking-setup-guide
-- Corpus : https://arxiv.org/abs/2603.14794, https://arxiv.org/abs/2211.04656, https://arxiv.org/pdf/2007.01216v3.pdf
+- Corpus : https://github.com/Kitware/MEVID, https://arxiv.org/abs/2211.04656, https://mevadata.org/, https://link.springer.com/content/pdf/10.1007%2F978-3-319-46466-4_52.pdf, https://arxiv.org/abs/2603.14794
+- Attaque de démarche et attaquants : https://arxiv.org/abs/2211.06597, https://arxiv.org/pdf/2109.00648, https://arxiv.org/pdf/2005.08601
 - Inpainting : https://ar5iv.labs.arxiv.org/html/2309.03897
 - Correspondance d'images : https://arxiv.org/pdf/2306.13643, https://arxiv.org/html/2602.08430v1
 - Vidéos montées et repère monde : https://arxiv.org/abs/2503.07597, https://arxiv.org/pdf/2610.19729,
