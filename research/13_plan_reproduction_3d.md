@@ -263,8 +263,15 @@ personnes connues. Le **Rank-1** est la part des cas où la bonne personne arriv
 | Requêtes avec une autre tenue en galerie | 284 sur 316 |
 
 Pourquoi MEVID plutôt que MARS, pourtant plus grand (1 261 identités) : chaque personne y porte environ 4 tenues. On peut
-donc séparer ce qui vient des vêtements de ce qui vient du corps et du mouvement. Son point faible : on y marche, on n'y
-converse pas.
+donc séparer ce qui vient des vêtements de ce qui vient du corps et du mouvement. Ses vidéos sont aussi peu contrôlées :
+33 caméras, intérieur et extérieur, souvent en hauteur. Un premier échantillon (35 images, deux dossiers d'identité, donc peu
+représentatif) montre des gens debout et assis, des visages souvent visibles, mais aussi des personnes coupées, des images
+sombres et des images sans personne. Hauteur médiane : 179 px, 24 % sous 128 px. À remesurer sur toute la partie test.
+
+**MARS en complément, seulement si un besoin apparaît.** Il offrirait une référence plus connue, mais pas de meilleurs
+visages : c'est aussi de la surveillance. Avec une seule tenue par personne, retirer les vêtements y ferait chuter le score sans
+rien dire du corps. Ses pistes sont aussi plus courtes (25 à 50 images), ce qui gêne l'attaque de démarche. Sa page officielle
+reste à confirmer. On n'y va que si l'écart de référence de MEVID (52,5 %) se révèle trop étroit pour conclure.
 
 **Niveaux :** N0 vidéo d'origine, N1 flou gaussien sur le visage, N2 avatar avec sa morphologie, N3 avatar à morphologie moyenne.
 
@@ -274,6 +281,7 @@ converse pas.
 |---|---|---|
 | Naïf | Galerie d'origine, modèle entraîné sur de vraies vidéos | Ce que l'apparence seule laisse passer. **Le plus faible : un score bas ne prouve rien à lui seul** |
 | Informé | Galerie passée au même traitement | Ce qui reste commun aux avatars d'une même personne : morphologie et mouvement |
+| Visage | Reconnaissance faciale, avec les photos d'inscription des personnes de MEVID (600 Mo) comme galerie | Ce que le visage laisse passer, surtout au niveau du flou |
 | Démarche | Modèle de démarche (GaitBase d'OpenGait, licence à vérifier) | La signature du mouvement, qu'un modèle d'apparence ne voit pas |
 | Adaptatif (si le temps le permet) | Modèle réentraîné sur des avatars | Le pire cas réaliste. En voix, ce type d'attaquant fait nettement mieux que les autres (VoicePrivacy 2020) |
 
@@ -296,11 +304,12 @@ converse pas.
 
 **Hors de cette mesure :**
 
-- Marcher n'est pas converser : le protocole mesure le pire cas pour la démarche, pas l'identification par les gestes d'une
-  conversation. L'utilité reste mesurée sur le talk-show.
+- Les personnes y sont surtout en déplacement ou occupées, elles ne conversent pas : le protocole n'évalue pas l'identification par
+  les gestes d'une conversation. L'utilité reste mesurée sur le talk-show.
 - La voix et le contenu de la parole identifient aussi. MEVID n'a pas de son utile ici : à documenter, pas à mesurer.
-- Le flou du niveau N1 demande un détecteur de visage. Sur ces images, il peut échouer souvent, ou n'avoir aucun effet : c'est à
-  mesurer, et ce serait déjà un résultat.
+- Le flou du niveau N1 demande un détecteur de visage. Sur les petites images ou vues du dessus, il peut échouer souvent : c'est à
+  mesurer, et les résultats sont à donner par taille d'image.
+- Les images sans personne sont à écarter, avec la même règle pour tous les niveaux. Sinon, elles fausseraient la comparaison.
 
 ### Jalon 7 : élargir
 
@@ -336,7 +345,7 @@ converse pas.
 3. Retirer l'apparence est retenu comme piste d'objectif de thèse.
 4. Échéance : fin décembre. Pas de calendrier par semaine, un fil rouge.
 5. Piste VTuber abandonnée. Piste des points clés du décor à creuser.
-6. Corpus de confidentialité : MEVID, préféré à MARS, qui a été examiné, pour ses tenues multiples.
+6. Corpus de confidentialité : MEVID, pour ses tenues multiples et son côté non contrôlé. MARS seulement en complément, si besoin.
 
 **Restent ouvertes :**
 
