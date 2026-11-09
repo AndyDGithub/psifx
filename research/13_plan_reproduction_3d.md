@@ -91,6 +91,35 @@ avec un trou à la place de la personne assise : de 14 à 24 % des pixels jamais
 une bonne partie de ce trou, et on complétera le reste (remplissage simple, puis fonds des autres cadrages reliés).
 Les incrustations visibles dans certains fonds (groupe 0) sont à corriger.
 
+### 2.3 Calculer moins d'images : simulation (test du 9 novembre)
+
+Idée : le modèle ne calcule que certaines images, on devine les autres, et il recalcule si l'image change trop ou s'il y a une coupe.
+Script : `research/scene3d/keyframe_simulation.py`. Simulation sans GPU, sur le talk-show : on cache des réponses déjà
+calculées, on interpole les points à l'intérieur de chaque plan, puis on compare au modèle et aux annotations.
+
+| Image calculée | Gain (par rapport à 1 sur 2) | OKS | Poignet, écart au modèle, mm (p50 / p95) |
+|---|---|---|---|
+| 1 sur 2 (référence) | – | 0,849 | – |
+| 1 sur 4 | × 2,0 | 0,850 | 6,8 / 56 |
+| 1 sur 6 | × 2,9 | 0,849 | 8,0 / 62 |
+| **1 sur 10** | **× 4,7** | **0,848** | 9,5 / 72 |
+| 1 sur 20 | × 8,7 | 0,843 | 13,5 / 94 |
+| 1 sur 40 | × 15 | 0,821 | 19,4 / 132 |
+| 1 sur 10, plus recalcul si l'image change (seuil haut) | × 3,4 | 0,849 | 8,3 / 63 |
+| 1 sur 20, plus recalcul si l'image change (seuil haut) | × 3,6 | 0,849 | 11,1 / 74 |
+
+**Lecture :**
+
+- **L'espacement fixe tient bien jusqu'à 1 sur 10.** 1 sur 4 donne déjà 56 mm de p95 au poignet, ce qui indique surtout le
+  tremblement du modèle lui-même.
+- **Le recalcul selon la différence d'image n'apporte presque rien ici :** 1 sur 20 avec recalcul coûte comme 1 sur 7 environ, pour
+  une erreur que 1 sur 10 fixe obtient à moindre coût. Une différence de pixels voit aussi la lumière et le décor, pas seulement le geste.
+- **Les coupes sont déjà respectées** dans toutes ces lignes : aucune interpolation ne les traverse.
+
+**Limites :** points interpolés et non paramètres MHR ; référence à 30 images/s, donc les gestes plus rapides ne sont pas vus ;
+gain du modèle seul, sans le décodage vidéo ; une seule vidéo. Sur MEVID, interpoler lisse le mouvement et pourrait **gonfler
+artificiellement la confidentialité** : à mesurer avec et sans.
+
 ## 3. Veille
 
 ### 3.1 Idée examinée et abandonnée : s'inspirer des VTubers
@@ -213,7 +242,9 @@ image ne peuvent pas être la même personne.
 - Morphologie et échelle par personne : médiane contre première image.
 - Lissage plan par plan : Kalman contre fenêtre glissante.
 - Visage : mesurer `expr_params`, en particulier avec le micro devant la bouche.
-- Fréquence : une image sur 2 suffit-elle ? Une sur 5, avec interpolation, tiendrait-elle ? Le coût baisserait d'autant.
+- Images clés (branche `optim/mesh-keyframes`, voir 2.3) : interpolation dans les paramètres MHR, temps réel mesuré. Comparer
+  l'espacement fixe à un découpage récursif : calculer le milieu d'un intervalle, et ne redécouper que si le modèle s'écarte de
+  l'interpolation. Vérifier sur des gestes marqués à la main.
 
 **Sortie :** accélération médiane divisée par au moins 2 et OKS en baisse de moins de 0,01. La borne sur l'OKS protège
 contre un lissage qui effacerait les gestes.
@@ -363,6 +394,7 @@ reste à confirmer. On n'y va que si l'écart de référence de MEVID (52,5 %) s
 - Corpus : https://github.com/Kitware/MEVID, https://arxiv.org/abs/2211.04656, https://mevadata.org/, https://link.springer.com/content/pdf/10.1007%2F978-3-319-46466-4_52.pdf, https://arxiv.org/abs/2603.14794
 - Attaque de démarche et attaquants : https://arxiv.org/abs/2211.06597, https://arxiv.org/pdf/2109.00648, https://arxiv.org/pdf/2005.08601
 - Inpainting : https://ar5iv.labs.arxiv.org/html/2309.03897
+- Images clés : https://arxiv.org/pdf/2007.15217
 - Correspondance d'images : https://arxiv.org/pdf/2306.13643, https://arxiv.org/html/2602.08430v1
 - Vidéos montées et repère monde : https://arxiv.org/abs/2503.07597, https://arxiv.org/pdf/2610.19729,
   https://openaccess.thecvf.com/content/CVPR2025/papers/Wang_PromptHMR_Promptable_Human_Mesh_Recovery_CVPR_2025_paper.pdf,
