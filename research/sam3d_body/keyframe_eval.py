@@ -130,7 +130,8 @@ def main():
     for person in people:
         # Loaded once and kept for all the methods: reading from the npz would decompress it at each access.
         stored = np.load(folders["vertices"] / f"{person}.npz")
-        vertices = (stored["frames"], stored["vertices"])
+        # A run without --save_vertices: the keypoints are still measured, the mesh is not.
+        vertices = (stored["frames"], stored["vertices"]) if "vertices" in stored.files else None
         for name, archives in methods.items():
             report[name]["people"][person] = measure(archives[person], dense[person], vertices, mhr, args.device, args.sample)
             print(name, person, report[name]["people"][person], flush=True)
