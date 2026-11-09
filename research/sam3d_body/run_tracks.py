@@ -39,7 +39,7 @@ PARAMETERS = ("global_rot", "body_pose_params", "hand_pose_params", "scale_param
               "mhr_model_params")
 
 
-def load_estimator(repo: Path, checkpoint: Path, device: str):
+def load_estimator(repo: Path, checkpoint: Path, device: str, fp32: bool = False):
     sys.path.insert(0, str(repo))
     import torch
     from sam_3d_body import SAM3DBodyEstimator
@@ -50,6 +50,8 @@ def load_estimator(repo: Path, checkpoint: Path, device: str):
     cfg = get_config(str(checkpoint / "model_config.yaml"))
     cfg.defrost()
     cfg.MODEL.MHR_HEAD.MHR_MODEL_PATH = str(checkpoint / "assets" / "mhr_model.pt")
+    if fp32:  # The checkpoint config runs the backbone in bfloat16.
+        cfg.TRAIN.USE_FP16 = False
     cfg.freeze()
     model = SAM3DBody(cfg)
     state = torch.load(checkpoint / "model.ckpt", map_location="cpu", weights_only=True)
@@ -76,6 +78,7 @@ def main():
     parser.add_argument("--min_area", type=int, default=400, help="smallest mask, in pixels, worth a mesh")
     parser.add_argument("--save_vertices", action="store_true", help="store meshes (about 110 kB per frame)")
     parser.add_argument("--output_name", default="sam3d_body", help="output folder, inside out_dir")
+    parser.add_argument("--fp32", action="store_true", help="backbone in float32 instead of bfloat16 (slower)")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args()
@@ -96,7 +99,7 @@ def main():
     from psifx.io import video
     from tqdm import tqdm
 
-    estimator = load_estimator(args.repo, args.checkpoint, args.device)
+    estimator = load_estimator(args.repo, args.checkpoint, args.device, args.fp32)
     results = {p: {"frames": [], "keypoints_2d": [], "keypoints_3d": [], "cam_t": [], "focal": [], "vertices": [],
                    **{name: [] for name in PARAMETERS}} for p in people}
     readers = [video.VideoReader(path=src)] + [video.VideoReader(path=mask_dir / f"{p}.mp4") for p in people]
