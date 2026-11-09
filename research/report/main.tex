@@ -148,6 +148,12 @@ dans le bruit, et fait passer le bon locuteur actif de 64,8 à 88,7\,\% sur le f
 complet de chaque personne, absent de la bibliothèque d'origine ; sur COCO, son PCK@0,05 (84,4) est proche de celui
 de l'article (86,8). L'ensemble est rassemblé sur une branche et validé dans un environnement installé de zéro.
 
+Le talk-show a ensuite reçu une vérité terrain faite à la main (200 images, 293 personnes, et les sous-titres). Elle change certaines
+conclusions : ViTPose y atteint un OKS de 0,893 dans la chaîne réelle, contre 0,742 pour RTMO-m, le choix par défaut, pourtant
+meilleur compromis sur COCO. La bibliothèque est publiée sur \code{main} (tag \code{tm-v1-optimisations}). La direction suivante vise
+à reproduire les vidéos avec des avatars 3D, pour prouver que les données sont exploitables, et propose comme objectif de retirer
+l'apparence des personnes en conservant leur comportement, ce qui se mesure sur deux axes : l'utilité et la confidentialité.
+
 \tableofcontents
 
 % =============================================================================
@@ -194,8 +200,9 @@ Le chapitre~\ref{chap:sota} présente l'état de l'art. Le chapitre~\ref{chap:pr
 problématique et les objectifs. Le chapitre~\ref{chap:methodo} décrit la méthodologie : banc de mesure,
 intégration dans psifx, tests et protocole d'optimisation. Le chapitre~\ref{chap:resultats} présente les
 résultats, discutés au chapitre~\ref{chap:discussion}. Le chapitre~\ref{chap:phase2} couvre la seconde phase :
-les approfondissements demandés à la réunion du 13 octobre, le test de bout en bout et la correction du suivi SAM3.
-Le chapitre~\ref{chap:futur} liste les pistes non encore testées, avant la conclusion.
+les approfondissements demandés à la réunion du 13 octobre, le test de bout en bout, la correction du suivi SAM3 et les mesures contre
+une vérité terrain. Le chapitre~\ref{chap:repro} décrit la direction actuelle : la reproduction en 3D et le retrait de l'apparence. Le
+chapitre~\ref{chap:futur} liste les pistes non encore testées, avant la conclusion.
 
 % =============================================================================
 \chapter{État de l'art}
@@ -723,7 +730,7 @@ sur le front de Pareto. Le choix se resserre à deux candidats :
     maintenir, premier du classement pondéré, et le seul à profiter pleinement du fp16.
 \end{itemize}
 Tous deux sont sous Apache 2.0. Plutôt que de trancher entre traitement différé (précision) et pipeline proche du
-temps réel (vitesse), les deux ont été intégrés : l'utilisateur choisit selon son étude
+temps réel (vitesse), les deux ont été intégrés.
 (section~\ref{sec:decisions}).
 
 \paragraph{Q5 -- Optimisations.} Le fp16 est un gain gratuit sur GPU pour les modèles ONNX (+11\,\% RTMPose,
@@ -828,7 +835,8 @@ Plusieurs écueils rencontrés valent d'être notés, car ils faussent silencieu
 
 Ce chapitre couvre la phase qui a suivi la réunion de suivi du 13 octobre 2026 : les quatre demandes faites à cette
 réunion, puis un test de bout en bout de psifx sur des vidéos réelles, et la correction du suivi SAM3 que ce test a
-rendue nécessaire. Il se termine par une veille des solutions apparues depuis le début du travail.
+rendue nécessaire. Viennent ensuite une vérité terrain sur un talk-show et les mesures qu'elle permet. Il se termine par une veille
+des solutions apparues depuis le début du travail.
 
 \section{Suites de la réunion du 13 octobre}
 \label{sec:phase2-reunion}
@@ -1489,6 +1497,146 @@ Mesuré ici (500 images) & --- & --- & --- & --- & --- & --- & 84,4 \\
     psifx, et la licence SAM doit être vérifiée avant toute redistribution.
 \end{itemize}
 
+\section{Paralléliser les étapes longues}
+\label{sec:parallel}
+
+Sur le talk-show V3, le suivi SAM3 prend 6\,010~s sur environ 8\,000. Trois pistes ont été mesurées (note
+\code{research/11_parallelisation.md}) :
+\begin{itemize}
+    \item \textbf{Chunks de SAM3 : non parallélisables ici.} Un chunk remplit déjà les 8~Go, et les identités d'un chunk
+    dépendent du précédent. Garder dans un plan la taille de chunk qui a tenu ne gagne que 0,6\,\% : ce changement a été
+    abandonné.
+    \item \textbf{MediaPipe : une personne par processus.} $\times 1{,}5$ avec 2 processus sur V2 (318 à 212~s), avec des
+    archives identiques octet par octet.
+    \item \textbf{Chaîne : les étapes indépendantes en même temps}, une seule étape GPU à la fois. Sur V2, à partir des
+    masques, 529 à 395~s, avec des sorties identiques.
+\end{itemize}
+Ces gains restent modestes : pour accélérer vraiment SAM3, il faudra réduire le calcul, pas le répartir.
+
+\section{Fiabilité de l'installation et des outils}
+\label{sec:fiabilite}
+
+La reconstruction du conteneur et le suivi pas à pas du README d'exemple ont révélé des défauts, tous corrigés :
+\begin{itemize}
+    \item \textbf{OpenFace.} Son installation peut enregistrer des pages web à la place de modèles. OpenFace réclame alors
+    environ 38~Go de mémoire et le système l'arrête. Un script vérifie désormais ces modèles après l'installation
+    (\code{docker/check_openface_models.sh}). Les chemins avec des espaces sont également corrigés.
+    \item \textbf{Identification.} Compatibilité de speechbrain avec huggingface-hub~1.x, cache rangé dans
+    \code{~/.cache/psifx}, et erreur claire quand la diarisation trouve plus de locuteurs que de micros.
+    \item \textbf{Hors ligne.} SpeechBrain demande toujours un fichier facultatif (\code{custom.py}) : en mode hors ligne,
+    cette question devient une erreur. L'étape d'identification garde donc un accès au réseau.
+\end{itemize}
+
+\section{Une vérité terrain sur un talk-show}
+\label{sec:annotation}
+
+Jusqu'ici, le talk-show n'avait pas de référence : seulement un accord entre modèles et une vérification qualitative. Un
+extrait de 5~min~12 (1080p, 60~images/s) en reçoit maintenant deux, faites à la main :
+\begin{itemize}
+    \item \textbf{Poses.} 200 images, 293 personnes, 17 points COCO, corrigés dans CVAT selon des consignes écrites
+    (\code{research/pose_annotation/CONSIGNES.md}), avec les points cachés et les points absents distingués.
+    \item \textbf{Sous-titres.} 101 répliques et 965 mots, avec le locuteur de chacune.
+\end{itemize}
+
+\paragraph{Limite : le biais d'ancrage.} Les images ont été pré-annotées par ViTPose++ huge, puis corrigées. Ce modèle
+obtient ensuite 0,980 d'OKS, soit 2,5 points de plus que les autres. L'écart entre la famille ViTPose et les autres est
+donc à lire comme un maximum. Annoter une autre vidéo, pré-annotée par un modèle d'une autre famille, permettrait de le
+mesurer.
+
+\section{Comparaison de modèles récents sur ces annotations}
+\label{sec:hf-pose}
+
+L'inventaire de Hugging Face (565 dépôts) laisse sept familles de modèles de pose humaine. Chaque modèle traite les images
+entières, et le temps est mesuré du cadre RGB aux personnes, détecteur compris (tableau~\ref{tab:hf-pose}, note
+\code{research/12_modeles_pose_huggingface.md}).
+
+Un seuil fixe sur le score des points n'est pas comparable d'un modèle à l'autre : les scores de RTMPose et RTMW ne sont pas
+compris entre 0 et 1. Deux mesures indépendantes de leur échelle sont donc ajoutées pour les points annotés absents : l'AUC
+(un point annoté a-t-il un meilleur score qu'un point absent ?) et les fantômes@95 (part des points absents gardés au seuil
+qui conserve 95\,\% des points annotés).
+
+\begin{table}[H]
+\centering
+\caption{Modèles de pose sur les 200 images annotées du talk-show, images entières (RTX~4060, 8~Go).}
+\label{tab:hf-pose}
+\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Modèle & OKS & PCK@0,1 & AUC absents & Fantômes@95 & ms/image \\
+\midrule
+ViTPose++ huge (pré-annotateur, biaisé) & 0,980 & 0,995 & 0,961 & 13\,\% & 258 \\
+ViTPose++ large fp16 & 0,955 & 0,986 & 0,960 & 14\,\% & 74 \\
+ViTPose++ base fp16 & 0,949 & 0,982 & 0,954 & 16\,\% & 52 \\
+\textbf{ViTPose base-simple (psifx)} fp16 & 0,938 & 0,972 & 0,950 & 17\,\% & 48 \\
+Sapiens2 0.4b fp16 & 0,937 & 0,977 & 0,946 & 21\,\% & 710 \\
+RTMW-x fp16 & 0,923 & 0,975 & 0,875 & 37\,\% & 30 \\
+RF-DETR Keypoint fp16 & 0,920 & 0,938 & 0,988 & 5\,\% & 18 \\
+RTMPose-m fp16 & 0,910 & 0,967 & 0,929 & 28\,\% & 21 \\
+RTMO-s & 0,894 & 0,909 & 0,986 & 5\,\% & 8 \\
+\textbf{RTMO-m (psifx, défaut)} fp16 & 0,841 & 0,843 & 0,969 & 6\,\% & 10 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Lecture.}
+\begin{itemize}
+    \item \textbf{ViTPose++ large} est le meilleur compromis, à 1,5 fois le temps du ViTPose de psifx. Il n'est pas encore
+    utilisable dans psifx : l'outil ne lui transmet pas le choix de l'expert COCO (\code{dataset_index}).
+    \item \textbf{RTMO-m, le défaut de psifx, est parmi les moins bons sur cette vidéo}, alors qu'il était le meilleur
+    compromis sur COCO. Il rate les personnes en plan rapproché, coupées à la taille, un cadrage absent de COCO. RTMO-s fait
+    mieux que lui.
+    \item \textbf{Les modèles en une étape} (RF-DETR, YOLO26, RTMO) reconnaissent le mieux l'absence d'un point, avec
+    environ 5\,\% de fantômes contre 13 à 37\,\% pour les autres.
+    \item \textbf{Sapiens2} n'apporte rien sur le corps, pour un coût 10 à 30 fois plus élevé.
+    \item \textbf{Optimisations.} Le fp16 ne change jamais la précision (à 0,002 près) et divise le temps par deux pour
+    ViTPose++ large. \code{torch.compile} n'ajoute presque rien.
+\end{itemize}
+
+\section{Exécution complète sur l'extrait du talk-show}
+\label{sec:full-run}
+
+Toutes les commandes du README et la chaîne de bout en bout ont tourné sur l'extrait, puis ont été mesurées contre les
+références (tableau~\ref{tab:full-run}).
+
+\begin{table}[H]
+\centering
+\caption{Poses de la chaîne réelle, avec les masques SAM3, contre les 200 images annotées.}
+\label{tab:full-run}
+\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Modèle & OKS & Points trouvés & PCK@0,1 & Fantômes & Temps \\
+\midrule
+ViTPose & \textbf{0,893} & 0,918 & 0,937 & 32\,\% & 53~min \\
+SAM~3D Body (points 2D, une image sur 2) & 0,849 & 0,911 & 0,904 & -- & 1~h~48 \\
+RTMO & 0,742 & 0,768 & 0,722 & 6\,\% & 29~min \\
+MediaPipe & 0,690 & 0,870 & 0,794 & 41\,\% & 18~min \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Lecture.}
+\begin{itemize}
+    \item \textbf{Les masques coûtent de la précision.} ViTPose passe de 0,938 sur l'image entière à 0,893, et RTMO de 0,841
+    à 0,742. L'hypothèse, non vérifiée, est qu'un masque coupe aussi les membres qui se chevauchent.
+    \item \textbf{ViTPose ajoute 25 personnes} en trop sur 293 ; RTMO aucune.
+    \item \textbf{Transcription.} Le modèle par défaut (\code{distil-large-v3}) ne gère que l'anglais : WER 0,949 sur cette vidéo
+    en français. \code{large-v3-turbo} descend à 0,217 (CER 0,139), mieux que \code{large-v3} (0,231).
+    \item \textbf{Locuteurs.} Part des mots attribués au bon locuteur : 0,916 avec le lien voix--personne de la chaîne.
+    \item \textbf{Identification par micros.} Accord de 0,52, soit le hasard : elle suppose un micro par personne.
+    \item \textbf{Coût.} Le suivi SAM3 prend 4~h~16 (0,82~s par image à 60~images/s) : il reste de loin l'étape la plus
+    longue.
+\end{itemize}
+
+\paragraph{Question restée ouverte : faut-il indiquer le nombre de locuteurs ?} Les mesures se contredisent. Sur cet extrait,
+laisser le modèle compter donne 0,925 contre 0,896 en imposant 2. Sur V3, imposer 2 donnait 98,0\,\% d'attribution contre
+63,6\,\% (section~\ref{sec:dev-run}), mais pour une autre raison : la faible détection des visages. Le conseil du
+README devra être nuancé.
+
+\paragraph{Mise à jour du README d'exemple.} Il utilise désormais ViTPose pour plusieurs personnes, \code{large-v3-turbo} avec
+la langue indiquée, et précise les limites de l'identification par micros. La bibliothèque a été publiée sur \code{main} avec
+le tag \code{tm-v1-optimisations} (8 novembre 2026).
+
 \section{Veille : solutions apparues depuis le début du travail}
 \label{sec:veille}
 
@@ -1519,6 +1667,229 @@ section~\ref{sec:mediapipe-tasks} \\
 SAM~3D Body \cite{sam3dbody2026} & Meta, CVPR~2026 : maillage 3D complet du corps, des mains et des pieds à partir
 d'une image, guidé par des points ou des masques (donc par les masques SAM3 de psifx). Image par image, 631 à 840~M
 de paramètres, accès restreint. & Testé, section~\ref{sec:sam3dbody} \\
+Modèles de pose récents & ViTPose++, RF-DETR Keypoint, Sapiens2 et RTMW, mesurés sur le talk-show annoté. ViTPose++ large mène ; RF-DETR est le
+meilleur pour reconnaître un point absent (version préliminaire). & Section~\ref{sec:hf-pose} \\
+Maillage en vidéo & SAM-Body4D \cite{sambody4d2025} : cohérence temporelle à partir de SAM~3D Body. HumanMM \cite{zhang2025humanmm} : mouvement sur
+des vidéos à plusieurs plans, hors périmètre sans point de vue libre. & Section~\ref{sec:mesh-state} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =============================================================================
+\chapter{Vers la reproduction 3D et le retrait de l'apparence}
+\label{chap:repro}
+% =============================================================================
+
+Ce chapitre décrit la direction prise à partir du 9 novembre 2026, et par laquelle ce travail se démarque de la bibliothèque
+d'origine. Il rapporte l'état au moment de sa rédaction : des tests préliminaires, pas encore une implémentation. Le plan
+détaillé est dans \code{research/13_plan_reproduction_3d.md}.
+
+\section{Objectifs}
+
+\paragraph{Prouver que les données sont exploitables.} Reproduire une vidéo à la caméra d'origine, avec un avatar 3D par
+personne, un décor minimal ou repris de la vidéo, le son et les sous-titres. Le chercheur voit directement ce que contiennent
+les données et ce qui leur manque.
+
+\paragraph{Retirer l'apparence en conservant le comportement (objectif proposé, à valider).} L'avatar remplace le visage et le
+corps, et deux axes sont mesurés ensemble :
+\begin{itemize}
+    \item l'\textbf{utilité} : le comportement mesuré sur la vidéo reproduite reste-t-il celui de l'original ?
+    \item la \textbf{confidentialité} : peut-on encore reconnaître la personne ?
+\end{itemize}
+Aucune étude trouvée ne mesure ces deux axes pour un avatar 3D sur des interactions sociales. Les travaux voisins montrent aussi
+le risque : la silhouette et la démarche permettent la réidentification sans le visage \cite{mirage2026}, et le mouvement seul
+identifie une personne \cite{pantomime2026}. On parle donc d'\enquote{apparence retirée}, et non d'anonymisation, tant
+qu'une mesure ne le justifie pas : au sens du RGPD, des données restent personnelles tant qu'une réidentification est
+raisonnablement probable.
+
+\paragraph{Fil rouge.} Le sujet a souvent changé de direction, au gré des problèmes et des idées. Il n'y a donc pas de calendrier
+par semaine, seulement un ordre : rendre les données exploitables, les montrer, mesurer, puis élargir à d'autres vidéos et à des
+commandes psifx. Cette dernière étape saute en premier si le temps manque.
+
+\section{Ce que les maillages doivent corriger}
+\label{sec:mesh-state}
+
+SAM~3D Body a tourné sur tout l'extrait, une image sur 2, à 0,69~s par image. Le maillage est une bonne source de pose 2D (OKS
+0,849, section~\ref{sec:full-run}), mais il n'est pas encore une donnée de scène (tableau~\ref{tab:mesh-state}) :
+\begin{itemize}
+    \item \textbf{Profondeur fausse.} Des personnes assises sont placées à 10~m, car la focale supposée est la même pour tous les
+    plans.
+    \item \textbf{Morphologie instable.} La largeur d'épaules varie d'une image à l'autre, alors qu'une personne ne change pas de
+    corps.
+    \item \textbf{Identités coupées.} Sur une planche de contrôle, la même personne porte un numéro en gros plan et un autre en plan
+    large (à confirmer sur toute la vidéo).
+    \item \textbf{Paramètres perdus.} Le script ne gardait que les sommets et les points, et jetait la pose, la morphologie et
+    l'expression du modèle du corps MHR \cite{mhr2025}.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Stabilité des maillages image par image. Vitesse relative au bassin ; elle inclut les changements de plan, donc son p95
+surestime le tremblement.}
+\label{tab:mesh-state}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Piste & Images & Épaules, cm (p5/50/95) & Vitesse, mm (p50/95) & Profondeur, m (p1/50/99) \\
+\midrule
+0 & 6\,120 & 33,4 / 34,9 / 36,9 & 6,0 / 79,0 & 1,03 / 2,22 / \textbf{10,15} \\
+1 & 3\,840 & 33,6 / 36,8 / 37,9 & 6,2 / 72,1 & 0,82 / 1,59 / 2,53 \\
+2 & 4\,346 & \textbf{16,6} / 33,7 / 34,9 & 7,8 / 133,2 & 1,58 / 2,50 / \textbf{7,64} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Premier chantier : garder les paramètres.} La branche \code{feature/mesh-params} les enregistre. Un test court (19
+images) montre que les paramètres seuls redonnent le maillage, à 0,17~mm près en médiane, et que deux exécutions donnent les mêmes
+points. L'exécution complète était en cours à la rédaction de cette version.
+
+\paragraph{Pistes pour la cohérence temporelle.} SAM-Body4D \cite{sambody4d2025} fixe la morphologie et lisse la pose par un filtre
+de Kalman, mais il ne publie aucune mesure chiffrée, et sa complétion des occlusions est trop coûteuse ici (26~min pour 90 images à
+5 personnes). On en reprend la méthode, sans la complétion ni l'environnement.
+
+\section{Retrouver les caméras par les points clés du décor}
+\label{sec:decor}
+
+Dans un talk-show très monté, les personnes bougent peu d'un plan à l'autre, mais le décor change. Des points clés sur le décor seul
+(SIFT d'OpenCV, personnes masquées, homographie RANSAC entre plans) permettent donc de reconnaître la caméra de chaque plan
+(script \code{research/scene3d/decor_cameras.py}). Sur l'extrait :
+\begin{itemize}
+    \item les 86 plans d'au moins 1~s forment 19 groupes, dont les 9 plus longs couvrent 93\,\% de la durée ;
+    \item le plan large revient 22 fois et un gros plan 24 fois : leurs paramètres n'ont à être estimés qu'une fois ;
+    \item les caméras sont quasi fixes : le décor bouge de 0,2~px en médiane dans un plan, à 960~px de large ;
+    \item la médiane du décor visible donne, pour chaque caméra, un \textbf{fond sans personne}
+    (figure~\ref{fig:decor}), avec un trou de 14 à 24\,\% des pixels que l'avatar couvrira en partie.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\IfFileExists{figures/decor_plate.jpg}{%
+\includegraphics[width=\textwidth]{figures/decor_plate.jpg}}{\fbox{decor\_plate.jpg introuvable}}
+\caption{À gauche, un plan d'un groupe de caméra. À droite, le fond calculé pour cette caméra, sans la personne.}
+\label{fig:decor}
+\end{figure}
+
+\paragraph{Limites vues, et pistes.}
+\begin{itemize}
+    \item \textbf{Faux liens par les logos.} Un premier essai reliait tous les plans en un seul groupe : le dessin des correspondances
+    a montré que le grand logo d'introduction se reliait au petit logo du coin. Piste : masquer ce qui reste identique à travers
+    tous les plans.
+    \item \textbf{Incrustations et transitions animées.} À détecter et à écarter.
+    \item \textbf{Caméras face à face.} Elles ne voient pas le même décor. Sans point de vue libre, ce n'est plus un obstacle.
+    \item \textbf{Vérification partielle.} Les groupes n'ont été contrôlés à l'œil que sur quelques plans : une annotation de chaque
+    plan reste à faire.
+\end{itemize}
+
+\section{Calculer moins d'images}
+\label{sec:keyframes}
+
+Le coût de SAM~3D Body deviendrait bloquant sur MEVID (section~\ref{sec:privacy}). L'idée : ne calculer que certaines images, deviner
+les autres, et laisser le modèle recalculer quand c'est nécessaire. Une simulation sans GPU sur le talk-show cache des réponses déjà
+calculées et les interpole à l'intérieur de chaque plan (tableau~\ref{tab:keyframes}).
+
+\begin{table}[H]
+\centering
+\caption{Images clés simulées sur le talk-show. Gain par rapport à une image sur 2. OKS contre les annotations ; écart au poignet par
+rapport au modèle.}
+\label{tab:keyframes}
+\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Méthode & Gain & OKS & Poignet, p95 (mm) \\
+\midrule
+1 image sur 2 (référence) & -- & 0,849 & -- \\
+1 sur 4 & $\times$ 2,0 & 0,850 & 56 \\
+1 sur 10 & $\times$ 4,7 & 0,848 & 72 \\
+1 sur 20 & $\times$ 8,7 & 0,843 & 94 \\
+1 sur 40 & $\times$ 15 & 0,821 & 132 \\
+1 sur 20, recalcul si l'image change & $\times$ 3,6 & 0,849 & 74 \\
+\textbf{Découpage récursif}, seuil 120~mm & $\times$ 5,0 & 0,846 & \textbf{56} \\
+Découpage récursif, seuil 60~mm & $\times$ 3,4 & 0,847 & 47 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Lecture.} Respecter les coupes est indispensable, et les deviner ne demande pas le modèle. Une différence d'image n'apporte
+presque rien : elle réagit aussi à la lumière et au décor. Le découpage récursif, où le modèle calcule le milieu d'un intervalle et ne
+redécoupe que s'il contredit l'interpolation, réduit d'un quart les grosses erreurs au poignet pour un gain voisin de l'espacement fixe.
+
+\paragraph{Caméra qui bouge.} Chaque image n'est calculée qu'une fois : si tout est redécoupé, on retrouve le coût normal, jamais plus.
+Le test du corps retire la rotation globale, donc une caméra synthétique jusqu'à 180°/s le laisse presque insensible ($\times$ 3,4 à
+3,7). Le test de place à l'image, lui, déclenche ($\times$ 1,4 au pire) : il faudra sans doute lui donner le mouvement de la caméra,
+tiré du décor. Un budget (jamais plus dense qu'une image sur 8) garantit $\times$ 2,5. Sur de vraies vidéos, comparées à leurs archives à
+une image sur 5 : film $\times$ 1,6 à 1,8, danse $\times$ 1,0.
+
+\paragraph{Limites.} Points interpolés et non paramètres ; référence à 30~images/s, donc les gestes plus rapides ne sont pas vus ; seuils
+regardés sur la même vidéo ; décodage non compté ; caméra synthétique sans flou. Une méthode proche existe pour la pose 2D
+\cite{zhang2020kfpn}, mais aucune trouvée pour les maillages. La branche \code{optim/mesh-keyframes} reste à faire.
+
+\section{Mesurer la confidentialité sur MEVID}
+\label{sec:privacy}
+
+\paragraph{Principe.} Jouer l'attaquant : un modèle de réidentification reçoit une vidéo modifiée et classe une galerie de personnes
+connues. Le Rank-1 est la part des cas où la bonne personne arrive en tête.
+
+\paragraph{Corpus.} La partie test de MEVID \cite{davila2023mevid} : 54 identités, 316 pistes de requête, 1\,438 en galerie, 1,19 million
+d'images, données MEVA sous CC~BY~4.0. Le hasard, calculé sur ces listes, donne un Rank-1 de 1,7\,\%. MARS \cite{zheng2016mars}, plus
+grand (1\,261 identités), a été examiné. MEVID a été préféré parce que chaque personne y porte environ 4 tenues, ce qui sépare les
+vêtements du corps et du mouvement, et pour son caractère peu contrôlé (33 caméras, intérieur et extérieur, souvent en hauteur). MARS
+reste un complément possible, si l'écart de référence de MEVID (52,5\,\% de Rank-1 au mieux) se révèle trop étroit.
+
+\paragraph{Niveaux et attaquants.} Vidéo d'origine, visage flouté, avatar avec sa morphologie, avatar à morphologie moyenne. Attaquants
+(tableau~\ref{tab:attackers}), selon la distinction de la recherche sur la voix \cite{voiceprivacy2020}.
+
+\begin{table}[H]
+\centering
+\caption{Attaquants prévus pour la mesure de confidentialité.}
+\label{tab:attackers}
+\small
+\begin{tabularx}{\textwidth}{@{}lYY@{}}
+\toprule
+Attaquant & Ce qu'il a & Ce que ça mesure \\
+\midrule
+Naïf & Galerie d'origine, modèle entraîné sur de vraies vidéos & L'apparence seule. Le plus faible : un score bas ne prouve rien à lui seul \\
+Informé & Galerie passée au même traitement & Ce qui reste commun aux avatars : morphologie et mouvement \\
+Visage & Photos d'inscription de MEVID en galerie & Ce que le visage laisse passer, surtout avec le flou \\
+Démarche & Modèle de démarche (GaitBase \cite{fan2023opengait}) & La signature du mouvement \\
+Adaptatif, si le temps le permet & Modèle réentraîné sur des avatars & Le pire cas réaliste \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{Déroulement.} Retrouver d'abord les 52,5\,\% de CAL avec ses poids publiés, pour vérifier l'évaluation. Rendre ensuite une fenêtre
+de 32 images par piste : environ 1,9~h pour les requêtes et 8,7~h pour la galerie (39~h pour toutes les images des seules requêtes).
+
+\paragraph{Précautions de lecture.}
+\begin{itemize}
+    \item \textbf{Un avatar raté donne aussi le hasard.} La confidentialité ne se lit qu'avec un contrôle de qualité sur les mêmes images.
+    Sur un petit échantillon, la hauteur médiane est de 179~px, avec 24\,\% sous 128~px, et certaines images ne contiennent personne.
+    \item \textbf{Le hasard pour un modèle d'apparence ne prouve pas l'absence de fuite}, puisqu'il ne regarde pas le mouvement.
+    \item \textbf{Un score de démarche au-dessus du hasard n'est pas un défaut} : conserver le mouvement, c'est conserver ce qui identifie.
+    Le résultat attendu est un compromis chiffré.
+    \item \textbf{Interpoler lisse le mouvement} (section~\ref{sec:keyframes}) et pourrait gonfler la confidentialité : à mesurer avec et sans.
+    \item \textbf{On n'y converse pas.} L'utilité reste mesurée sur le talk-show, et la voix et le contenu de la parole restent identifiants.
+\end{itemize}
+
+\section{Idées examinées et décisions}
+\label{sec:idees}
+
+\begin{table}[H]
+\centering
+\caption{Idées examinées lors de la préparation de cette direction (novembre 2026).}
+\label{tab:idees}
+\small
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.6cm}Y>{\raggedright\arraybackslash}p{2.8cm}@{}}
+\toprule
+Idée & Raison & Décision \\
+\midrule
+Point de vue libre, repère commun & Pas nécessaire pour prouver l'exploitabilité ; le principal risque du premier plan & Abandonnée \\
+S'inspirer des VTubers & Sujets proches et de face, alors que psifx doit rester fiable dans la majorité des situations. Les cas les plus mobiles semblent reposer sur des capteurs VR plutôt que sur une caméra & Abandonnée \\
+Avatars photoréalistes & Reproduisent l'apparence, donc l'identité & Écartée \\
+Complétion des occlusions (Diffusion-VAS) & Trop coûteuse sur 8~Go & Écartée pour l'instant \\
+Recalcul selon la différence d'image & N'apporte presque rien en simulation & Remplacée par le découpage récursif \\
+MARS & Une seule tenue par personne, pistes courtes & Complément, si besoin \\
+Points clés du décor & Retrouvent les caméras et donnent un fond sans personne & Retenue, à consolider \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1527,6 +1898,8 @@ de paramètres, accès restreint. & Testé, section~\ref{sec:sam3dbody} \\
 \chapter{Travaux futurs}
 \label{chap:futur}
 % =============================================================================
+
+La priorité est désormais la direction du chapitre~\ref{chap:repro}. Les pistes ci-dessous restent valables, mais passent après.
 
 \section{Optimisations non encore testées}
 
@@ -1589,13 +1962,14 @@ toujours pas intégré à \code{transformers} (section~\ref{sec:veille}). Le tes
     de détection du locuteur actif entraîné \cite{liao2023lightasd}.
     \item \textbf{Association robuste aux petits groupes de voix} : quand la diarisation coupe une personne en deux,
     le petit groupe doit rejoindre la personne la plus proche plutôt que basculer \enquote{hors champ}
-    (section~\ref{sec:mediapipe-tasks}). Corriger aussi l'identification par micros, qui plante quand la diarisation
-    trouve plus de locuteurs que de micros, ou avec le modèle speechbrain par défaut (section~\ref{sec:dev-run}).
+    (section~\ref{sec:mediapipe-tasks}). Les plantages de l'identification par micros sont corrigés
+    (section~\ref{sec:fiabilite}).
     \item \textbf{Visage avec MediaPipe \enquote{Tasks}} : retrouver les visages manqués sans dégrader le signal des
     lèvres, par exemple en ne gardant que les visages assez grands et de face.
-    \item \textbf{Maillage 3D du corps} : SAM~3D Body (section~\ref{sec:sam3dbody}) reste à mesurer sur une vérité
-    terrain 3D (3DPW ou EMDB), à lisser dans le temps, puis à intégrer comme commande psifx écrivant les archives de
-    pose habituelles ; le maillage pourrait remplacer le squelette 3D de MediaPipe dans la vidéo reconstruite.
+    \item \textbf{Maillage 3D du corps} : devenu la direction principale (chapitre~\ref{chap:repro}). Il reste à le mesurer
+    sur une vérité terrain 3D (3DPW ou EMDB), puis à l'intégrer comme commande psifx.
+    \item \textbf{Modèles de pose} : proposer ViTPose++ large dans psifx, revoir RTMO-m comme choix par défaut, mesurer l'effet
+    des masques, et réduire le biais d'ancrage avec une autre vidéo annotée (sections~\ref{sec:annotation} à~\ref{sec:full-run}).
     \item \textbf{Robustesse au bruit et à la musique} : séparation de la voix avant transcription (option psifx),
     transcription vide plutôt qu'un plantage quand aucune parole n'est détectée, et mesure du WER sur de la parole
     bruitée.
@@ -1633,7 +2007,13 @@ pour le bruit fort (chapitre~\ref{chap:futur}). Les outils ont été modernisés
 qui estime bien mieux le nombre de locuteurs dans le bruit et sur les films, et MediaPipe \enquote{Tasks}, deux fois
 plus rapide. Enfin, SAM~3D Body, guidé par les masques SAM3, apporte un maillage 3D complet du corps, que la
 bibliothèque d'origine ne fournissait pas, avec une précision 2D proche de celle annoncée dans l'article. Tout est
-rassemblé sur \code{dev} et validé dans un environnement neuf, prêt pour une version de \code{main}.
+rassemblé sur \code{dev} et validé dans un environnement neuf, puis publié sur \code{main}.
+
+Une vérité terrain faite à la main sur un talk-show a corrigé une conclusion : le meilleur compromis sur COCO n'est pas le meilleur sur
+des cadrages rapprochés, et les masques SAM3 coûtent de la précision. La suite ne cherche plus seulement à extraire mieux : elle vise à
+reproduire la vidéo avec des avatars 3D, à prouver ainsi que les données sont exploitables, et à mesurer si l'on peut retirer
+l'apparence d'une personne en conservant son comportement (chapitre~\ref{chap:repro}). Ces résultats restent à obtenir : à ce stade, seuls les
+tests préliminaires sont faits.
 
 % =============================================================================
 \appendix
@@ -1641,6 +2021,10 @@ rassemblé sur \code{dev} et validé dans un environnement neuf, prêt pour une 
 % =============================================================================
 
 \section{Branches}
+
+Depuis le 8 novembre 2026, seules \code{main}, \code{dev} et \code{experiment/e2e-demo} restent de cette liste, en plus des
+branches de travail en cours. Les branches fusionnées sont supprimées, et les autres conservées sous forme de tags
+\code{archive/<branche>}.
 
 \begin{table}[H]
 \centering
@@ -1669,6 +2053,14 @@ Branche & Contenu \\
 \code{fix/numpy-skvideo}, \code{fix/e2e-*} & Correctifs trouvés par l'environnement neuf (mergées) \\
 \code{dev-before-integration} & \code{dev} avant l'intégration du 27 octobre (sauvegarde) \\
 \code{feature/sam3d-body} & Maillage 3D SAM~3D Body sur les pistes SAM3 (mergée dans \code{dev}) \\
+\code{optim/parallel-pipeline-stages} & Étapes de la chaîne en même temps (mergée) \\
+\code{optim/mediapipe-parallel-people} & MediaPipe, une personne par processus (mergée) \\
+\code{optim/sam3-adaptive-chunks} & Taille de chunk gardée dans un plan (abandonnée, 0,6\,\%) \\
+\code{eval/talkshow-pose-annotation} & Annotations du talk-show et évaluation (mergée) \\
+\code{eval/pose-models-hf} & Comparaison de modèles de pose (mergée) \\
+\code{eval/talkshow-subtitles} & Comparaison aux sous-titres de référence (mergée) \\
+\code{feature/mesh-params} & Paramètres MHR dans les archives (en cours) \\
+\code{docs/plan-3d-reproduction} & Plan de reproduction, tests du décor et des images clés (en cours) \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1704,6 +2096,19 @@ Test OCHuman et test de bout en bout :
 OCHUMAN_ROOT=/path/to/ochuman pytest -m dataset -s
 python research/e2e/run_pipeline.py .e2e_outputs/v3_talkshow --chunk_size 64
 python research/e2e/summarize.py .e2e_outputs/v1_example .e2e_outputs/v2_ava ...
+\end{verbatim}
+}
+
+Mesures sur le talk-show annoté, décor et images clés :
+{\footnotesize
+\begin{verbatim}
+python research/pose_annotation/compare.py <dossier> <modeles>
+python research/pose_annotation/evaluate.py <dossier> --archives nom=<archives>
+python research/sam3d_body/mesh_eval.py <archives> --checkpoint <poids> \
+    --reference <archives avec sommets> --annotations <dossier>
+python research/scene3d/decor_cameras.py <pipeline> --ignore 0,0,.14,.14 .86,0,1,.14
+python research/scene3d/keyframe_simulation.py <dossier>
+python research/scene3d/keyframe_recursive.py <dossier> --others <autres dossiers>
 \end{verbatim}
 }
 
