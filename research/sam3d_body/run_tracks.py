@@ -9,6 +9,7 @@ Writes ``<out_dir>/sam3d_body/<id>.npz`` with, per processed frame:
 - ``frames`` (N,), ``keypoints_2d`` (N, 70, 2) in pixels, ``keypoints_3d`` (N, 70, 3) in meters,
   camera frame minus ``cam_t``;
 - ``cam_t`` (N, 3), ``focal`` (N,), ``vertices`` (N, V, 3) float16 (with ``--save_vertices``);
+- the MHR parameters of ``PARAMETERS``, enough to rebuild the mesh (``mesh_eval.py`` checks it);
 - ``faces`` (F, 3), shared by all frames.
 
 The SAM 3D Body code is not a pip package: pass its clone with ``--repo``. Checkpoints are loaded
@@ -33,6 +34,9 @@ os.environ.setdefault("MOMENTUM_ENABLED", "0")
 
 # MHR-70 keypoints in COCO-17 order (nose, eyes, ears, shoulders, elbows, wrists, hips, knees, ankles).
 MHR70_TO_COCO17 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 62, 41, 9, 10, 11, 12, 13, 14]
+# What the model predicts beside the mesh: pose, identity and expression can then be changed separately.
+PARAMETERS = ("global_rot", "body_pose_params", "hand_pose_params", "scale_params", "shape_params", "expr_params",
+              "mhr_model_params")
 
 
 def load_estimator(repo: Path, checkpoint: Path, device: str):
@@ -71,12 +75,13 @@ def main():
                         help="full adds the hand decoder (slower)")
     parser.add_argument("--min_area", type=int, default=400, help="smallest mask, in pixels, worth a mesh")
     parser.add_argument("--save_vertices", action="store_true", help="store meshes (about 110 kB per frame)")
+    parser.add_argument("--output_name", default="sam3d_body", help="output folder, inside out_dir")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args()
 
     d = args.out_dir
-    src, mask_dir, dst = d / "input.mp4", d / "masks", d / "sam3d_body"
+    src, mask_dir, dst = d / "input.mp4", d / "masks", d / args.output_name
     for path in (src, mask_dir, args.checkpoint / "model.ckpt", args.checkpoint / "assets" / "mhr_model.pt",
                  args.repo / "sam_3d_body"):
         if not path.exists():
@@ -92,8 +97,8 @@ def main():
     from tqdm import tqdm
 
     estimator = load_estimator(args.repo, args.checkpoint, args.device)
-    results = {p: {"frames": [], "keypoints_2d": [], "keypoints_3d": [], "cam_t": [], "focal": [], "vertices": []}
-               for p in people}
+    results = {p: {"frames": [], "keypoints_2d": [], "keypoints_3d": [], "cam_t": [], "focal": [], "vertices": [],
+                   **{name: [] for name in PARAMETERS}} for p in people}
     readers = [video.VideoReader(path=src)] + [video.VideoReader(path=mask_dir / f"{p}.mp4") for p in people]
     n_frames = len(readers[0])
     start, calls = time.time(), 0
@@ -125,6 +130,8 @@ def main():
                 r["keypoints_3d"].append(o["pred_keypoints_3d"])
                 r["cam_t"].append(o["pred_cam_t"])
                 r["focal"].append(float(o["focal_length"]))
+                for name in PARAMETERS:
+                    r[name].append(np.asarray(o[name], dtype=np.float32))
                 if args.save_vertices:
                     r["vertices"].append(o["pred_vertices"].astype(np.float16))
     finally:
