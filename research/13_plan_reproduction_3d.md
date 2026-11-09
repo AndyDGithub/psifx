@@ -327,7 +327,10 @@ Pourquoi MEVID plutôt que MARS, pourtant plus grand (1 261 identités) : chaque
 donc séparer ce qui vient des vêtements de ce qui vient du corps et du mouvement. Ses vidéos sont aussi peu contrôlées :
 33 caméras, intérieur et extérieur, souvent en hauteur. Un premier échantillon (35 images, deux dossiers d'identité, donc peu
 représentatif) montre des gens debout et assis, des visages souvent visibles, mais aussi des personnes coupées, des images
-sombres et des images sans personne. Hauteur médiane : 179 px, 24 % sous 128 px. À remesurer sur toute la partie test.
+sombres et des images sans personne.
+
+Hauteur des images, mesurée sur la première image des 1 754 pistes : médiane 159 px, p10 76 px, p90 367 px ; 32 % sous 96 px,
+43 % sous 128 px. Les résultats seront donc donnés par taille, et SAM 3D Body est à contrôler d'abord sur les plus petites.
 
 **MARS en complément, seulement si un besoin apparaît.** Il offrirait une référence plus connue, mais pas de meilleurs
 visages : c'est aussi de la surveillance. Avec une seule tenue par personne, retirer les vêtements y ferait chuter le score sans
