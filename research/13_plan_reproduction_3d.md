@@ -116,7 +116,38 @@ calculées, on interpole les points à l'intérieur de chaque plan, puis on comp
   une erreur que 1 sur 10 fixe obtient à moindre coût. Une différence de pixels voit aussi la lumière et le décor, pas seulement le geste.
 - **Les coupes sont déjà respectées** dans toutes ces lignes : aucune interpolation ne les traverse.
 
-**Limites :** points interpolés et non paramètres MHR ; référence à 30 images/s, donc les gestes plus rapides ne sont pas vus ;
+**Découpage récursif** (`research/scene3d/keyframe_recursive.py`). Les coupes sont trouvées d'avance, par différence d'image. La
+dichotomie porte sur les gestes : on part d'une image sur 40, on calcule le milieu de chaque intervalle, et on ne redécoupe que si
+le modèle contredit l'interpolation (corps : p95 des articulations autour du bassin, rotation globale retirée ; place : position du
+bassin à l'image).
+
+| Sur le talk-show | Gain | OKS | Poignet, p95 (mm) |
+|---|---|---|---|
+| 1 sur 10 fixe | × 4,7 | 0,848 | 72 |
+| Récursif, seuil 120 mm | **× 5,0** | 0,846 | **56** |
+| Récursif, seuil 80 mm | × 4,2 | 0,847 | 51 |
+| Récursif, seuil 60 mm | × 3,4 | 0,847 | 47 |
+
+Pour un gain voisin, les grosses erreurs au poignet baissent d'un quart. L'écart d'OKS (0,002) est dans le bruit de 200 images.
+
+**Pire cas : caméra qui bouge, pas de coupe.** Chaque image n'est calculée qu'une fois et son résultat resservi : si tout est redécoupé,
+on retrouve le coût normal (× 1,0), jamais plus, à part les tests eux-mêmes.
+
+| Caméra synthétique, seuil 60 mm | Test du corps seul | Corps et place | Sans retirer la rotation |
+|---|---|---|---|
+| 30°/s, 300 px sur 8 s | × 3,7 | × 3,4 | × 3,0 |
+| 90°/s, 300 px sur 4 s | × 3,5 | × 3,0 | × 2,5 |
+| 90°/s, 600 px sur 2 s | × 3,6 | × 2,1 | × 2,0 |
+| 180°/s, 600 px sur 1 s | × 3,4 | × 1,4 | × 1,3 |
+
+- Le corps seul ne réagit presque pas à la caméra, une fois sa rotation retirée. C'est ce qui manque à une différence d'image.
+- Le test de place, lui, déclenche : il faudra sans doute lui donner le mouvement de la caméra, tiré des points clés du décor (non testé).
+- Avec un budget (jamais plus dense qu'une image sur 8), même si tout demande un redécoupage : × 2,5, OKS 0,849. Le gain minimum est alors garanti.
+- Vraies vidéos, comparées à leurs archives à 1 image sur 5 : film V2 × 1,6 à × 1,8 ; danse V4 × 1,0, sans gain ni perte.
+
+Cette caméra synthétique ne crée ni flou ni changement d'apparence : une vraie vidéo à caméra mobile reste à tester.
+
+**Limites communes :** points interpolés et non paramètres MHR ; référence à 30 images/s, donc les gestes plus rapides ne sont pas vus ;
 gain du modèle seul, sans le décodage vidéo ; une seule vidéo. Sur MEVID, interpoler lisse le mouvement et pourrait **gonfler
 artificiellement la confidentialité** : à mesurer avec et sans.
 
@@ -243,8 +274,7 @@ image ne peuvent pas être la même personne.
 - Lissage plan par plan : Kalman contre fenêtre glissante.
 - Visage : mesurer `expr_params`, en particulier avec le micro devant la bouche.
 - Images clés (branche `optim/mesh-keyframes`, voir 2.3) : interpolation dans les paramètres MHR, temps réel mesuré. Comparer
-  l'espacement fixe à un découpage récursif : calculer le milieu d'un intervalle, et ne redécouper que si le modèle s'écarte de
-  l'interpolation. Vérifier sur des gestes marqués à la main.
+  l'espacement fixe au découpage récursif avec un budget. Vérifier sur des gestes marqués à la main, et sur une vraie caméra mobile.
 
 **Sortie :** accélération médiane divisée par au moins 2 et OKS en baisse de moins de 0,01. La borne sur l'OKS protège
 contre un lissage qui effacerait les gestes.
