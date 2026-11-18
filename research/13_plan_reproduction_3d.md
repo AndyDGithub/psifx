@@ -1,6 +1,7 @@
 # Plan : reproduire une vidéo avec des avatars 3D, et retirer l'apparence
 
-Date : 2026-11-09. Statut : plan révisé après retour, à valider avec les encadrants. Point de départ : `dev` au tag
+Date : 2026-11-09, révisé le 2026-11-18 après la réunion du 10 novembre (`14_reunion_2026-11-10.md`). Statut : objectif
+discuté avec le professeur responsable. Point de départ : `dev` au tag
 `tm-v1-optimisations`. Échéance de travail : fin décembre 2026. Le rapport s'écrit au fil du travail, idées abandonnées comprises.
 
 ## 1. Les objectifs
@@ -9,18 +10,26 @@ Date : 2026-11-09. Statut : plan révisé après retour, à valider avec les enc
 avec un avatar par personne, le décor repris de la vidéo ou minimal, le son et les sous-titres. Le chercheur voit
 directement ce que contiennent les données et ce qui leur manque. Pas de point de vue libre.
 
-**Objectif de thèse proposé : retirer l'apparence en conservant le comportement.** L'avatar remplace le visage et le
-corps, et on mesure deux choses en même temps :
+**Objectif de thèse : retirer l'apparence en conservant le comportement.** L'avatar remplace le visage et le
+corps, et on mesure deux choses :
 
-- **Utilité :** le comportement mesuré sur la vidéo reproduite reste-t-il celui de l'original ?
-- **Confidentialité :** peut-on encore reconnaître la personne ?
+- **Utilité, en premier :** le comportement reste-t-il observable sur la vidéo avec avatars ?
+- **Ce qui reste de l'identité, ensuite :** peut-on encore reconnaître la personne, en particulier par son mouvement ?
+
+**Cas d'utilisation (proposé par le professeur le 2026-11-10) :** former de futurs psychologues. Un psychologue filme des
+participants (par exemple avec des troubles de l'attention) ; la version avec avatars sert à apprendre à observer le
+comportement, à analyser des situations et aux mises en situation. Les personnes en formation ne cherchent pas à reconnaître
+les participants : une anonymisation complète n'est pas nécessaire. Le partage avec des collègues reste encadré par le RGPD
+et la LPD suisse (consentement).
 
 Le même travail sert donc les deux objectifs. Je n'ai trouvé aucune étude qui mesure ces deux axes pour un avatar 3D
 sur des données d'interaction sociale : c'est la place que le travail peut prendre. Les méthodes publiées existent, mais
 visent autre chose (section 3).
 
-Le mot « anonymisé » est réservé à ce qu'une mesure justifie. Au sens du RGPD, des données restent personnelles tant
-qu'une réidentification est raisonnablement probable (considérant 26). Le texte parle donc d'« apparence retirée ».
+**Vocabulaire (décidé le 2026-11-10) :** ni « anonymisation » (impossible à garantir en gardant le comportement : la démarche
+et les mouvements identifient), ni « pseudonymisation » (terme juridique : identifiants remplacés, clé de correspondance
+gardée). On dit « retirer l'apparence » ou « remplacement par un avatar 3D ». Au sens du RGPD, des données restent
+personnelles tant qu'une réidentification est raisonnablement probable (considérant 26) ; la LPD suisse raisonne de même.
 
 ## 2. État mesuré
 
@@ -151,6 +160,60 @@ Cette caméra synthétique ne crée ni flou ni changement d'apparence : une vrai
 gain du modèle seul, sans le décodage vidéo ; une seule vidéo. Sur MEVID, interpoler lisse le mouvement et pourrait **gonfler
 artificiellement la confidentialité** : à mesurer avec et sans.
 
+### 2.4 Mesuré depuis le 9 novembre
+
+**Paramètres (jalon 0, branche `feature/mesh-params`).** Talk-show complet : 9 352 images en 2 h 43. Les paramètres MHR
+reconstruisent le maillage de leur propre calcul à 0,2 mm (médiane). Archives : 42 Mo au lieu de 1,3 Go de sommets. OKS 0,849.
+
+**Deux calculs ne donnent pas les mêmes mains.** Sur 0,4 % des personnes-images, les mains diffèrent de plus de 50 mm (jusqu'à
+environ 20 cm). Cause : le réseau principal tourne en bfloat16. Sur les images concernées, trois calculs en bfloat16 se
+contredisent dans 33 % des cas, en float32 jamais (option `--fp32`). Le float32 coûte deux fois plus (1,50 s par image) et
+donne le même OKS et le même tremblement : il n'achète que la reproductibilité. L'hypothèse « la main qui saute est celle du
+décodeur du corps » est rejetée par les mesures.
+
+**Images clés réelles (branche `optim/mesh-keyframes`).** Référence : calcul dense, 2 h 43, OKS 0,849.
+
+| Réglage | Images calculées | Durée | OKS |
+|---|---|---|---|
+| Récursif, seuil 80 mm, budget 1 sur 8 | 18 % | 35 min | 0,847 |
+| Récursif, seuil 80 mm | 24 % | 31 min | 0,847 |
+| Récursif, seuil 40 mm | 43 % | 55 min | 0,848 |
+| Mode `body` seul, toutes les images | 100 % | 34 min | 0,854 |
+| **Mode `body` + images clés, seuil 40 mm** | – | **18 min** | **0,852** |
+
+- Le seuil 40 mm bat l'espacement fixe 1 sur 4 (51 % des images) sur le poignet et le maillage, surtout pour la personne 2
+  (maillage p95 : 66 contre 442 mm).
+- Les gestes rapides restent mal interpolés (personne 2 : 320 à 370 mm au poignet).
+- Le mode `body` est plus lisse et a un meilleur OKS, mais ses doigts ne sont pas mesurés.
+- **Caméra qui bouge :** seule la vidéo AVA bouge (9 % des images). Seuil 80 mm : 20 % des images en 11 min, à peu près
+  comme 1 sur 5 fixe. Les images clés vont bien là où la caméra bouge (16 % contre 9 %), mais l'erreur y reste deux fois plus
+  haute. Pas encore de vidéo à caméra très mobile.
+
+**MEVID, petites découpes (branche `experiment/mevid-small-crops`).** SAM 3D Body en mode `body`, découpe entière comme boîte,
+sans masque, comparé à ViTPose sur la même découpe.
+
+- Échantillon : 102 pistes × 8 images. La pose 2D tient (accord 0,91 vers 85 px, 0,95 au-dessus de 288 px). Le mode `full`
+  donne les mêmes points que `body` à ces tailles, pour un coût triple.
+- **Partie test entière : 1 754 pistes, fenêtre de 32 images au milieu, 55 291 découpes, 2 h 43** (0,18 s par découpe,
+  ViTPose compris). Filtre : moyenne des scores ViTPose d'au moins 0,5, épaules et hanches au-dessus de 0,3, au moins 8
+  découpes gardées par piste.
+
+| Hauteur | Pistes | Découpes gardées | Échecs, sans → avec filtre | Accord avec ViTPose | Saccades (mm) | Morphologie dans / entre pistes |
+|---|---|---|---|---|---|---|
+| < 64 px | 2 | 100 % | 1,6 % → 1,6 % | 0,78 | 80 | 0,32 |
+| 64–96 | 552 | 85 % | 8,9 % → 3,5 % | 0,91 | 39 | 0,15 |
+| 96–128 | 202 | 84 % | 4,9 % → 1,0 % | 0,92 | 38 | 0,12 |
+| 128–192 | 311 | 84 % | 8,4 % → 0,3 % | 0,91 | 22 | 0,07 |
+| 192–288 | 376 | 92 % | 4,7 % → 0,8 % | 0,96 | 8 | 0,035 |
+| > 288 | 311 | 92 % | 4,4 % → 1,0 % | 0,95 | 10 | 0,04 |
+
+- **Restent utilisables : 1 560 pistes, les 54 personnes, 276 requêtes sur 316 et 1 284 pistes de galerie.**
+- Le filtre écarte l'herbe, les images blanches, les voitures, les jambes seules et les têtes vues de dos ; il écarte à tort
+  quelques personnes assises coupées à la taille, et il laisse passer les découpes à plusieurs personnes.
+- Le mouvement 3D se dégrade sous 128 px (saccades quatre fois plus fortes), mais la morphologie reste propre à chaque
+  personne : elle varie moins dans une piste qu'entre pistes, même petite. L'attaquant de morphologie a donc de quoi
+  travailler.
+
 ## 3. Veille
 
 ### 3.1 Idée examinée et abandonnée : s'inspirer des VTubers
@@ -235,83 +298,103 @@ Ce travail change souvent de direction : un problème imprévu, une piste qui s'
 **pas de calendrier par semaine**, seulement un ordre et une échéance :
 
 1. **Rendre les données exploitables :** paramètres, caméras, personnes, stabilité.
-2. **Les montrer :** la vidéo reproduite, preuve de l'objectif de base.
-3. **Mesurer :** ce qui reste du comportement, et ce qui reste de l'identité.
+2. **Les montrer :** la vidéo avec avatars, preuve de l'objectif de base **et produit du cas d'utilisation** (formation de
+   psychologues, analyse de situations).
+3. **Mesurer :** d'abord ce qui reste du comportement (utilité), puis ce qui reste de l'identité.
 4. **Élargir :** autres vidéos, commandes psifx.
 
 Si le temps manque, l'étape 4 saute d'abord. Les seuils sont des propositions, à ajuster sur les premières mesures. Une
 branche et une note par étape, et le rapport avance en même temps : **ce qu'on a pensé, fait ou abandonné y est tracé au
 moment où ça arrive**.
 
-### Jalon 0 : garder les paramètres
+**Révision du 2026-11-18**, après la réunion du 10 novembre (`14_reunion_2026-11-10.md`). Les jalons 0 à 7 ci-dessous
+remplacent ceux du 9 novembre. Ordre de travail : **E1, E2, E7 (avant la réunion du 24 novembre, avec E6.4 morphologie qui
+ne coûte presque rien), puis E3, E4, E5, E6, E8.** Le téléchargement et l'extraction de MEVID pour E6.1 peuvent tourner en
+fond plus tôt.
 
-- Enregistrer tous les paramètres MHR dans `run_tracks.py`, relancer le talk-show (1 h 48).
-- Écrire `mesh_eval.py`, qui automatise les mesures de la section 2.1.
+### E0. Garder les paramètres — fait (2026-11-09)
 
-**Sortie :** sommets recalculés à moins de 1 mm ; OKS inchangé (0,849).
+Voir 2.4. Les paramètres MHR reconstruisent le maillage de leur propre calcul (médiane 0,2 mm).
 
-### Jalon 1 : plans, caméras, personnes
+### E1. Noter — fait (2026-11-18)
 
-**Réduire les limites du décor**, du plus simple au plus coûteux :
+Note de réunion (`14_reunion_2026-11-10.md`), cette révision, mémoire du fil rouge.
 
-| Limite observée | Piste simple | Si ça ne suffit pas |
-|---|---|---|
-| Logo relié à sa version agrandie | Trouver les zones identiques à travers **tous** les plans, puis les masquer, au lieu de boîtes écrites à la main | Vérifier que les points liés sont répartis dans l'image, pas tous sur un même graphisme |
-| Plans d'incrustation (logo plein écran, vidéos insérées) | Plan sans personne suivie, ou sans lien vers les autres : le marquer `incrustation` et ne pas lui donner de fond | Classer le plan à l'aide de SAM3 |
-| Transition animée (filé de zoom) | Mesurer le flou et le mouvement du décor dans le plan | Reprendre le détecteur de `reid.py` |
-| Un cadrage trop proche d'un autre sépare une même caméra en plusieurs groupes | Relier les groupes dont l'homographie est un zoom (points déjà disponibles) | Clustering sur la matrice des liens |
-| Trou du fond derrière la personne | Fusionner les fonds des cadrages reliés, puis remplissage OpenCV : l'avatar couvre le reste | Modèle d'inpainting vidéo (ProPainter : licence non commerciale, à éviter si possible) |
-| Vérification à l'œil sur quelques plans seulement | Annoter à la main le groupe de chaque plan (86 plans, quelques minutes) | – |
+### E2. Vidéo avec avatars, version 1
 
-**Personnes :** fusionner les pistes d'une même personne : apparence, morphologie, et deux pistes visibles dans la même
-image ne peuvent pas être la même personne.
+**But :** la première vidéo du cas d'utilisation, et les exemples visuels que le rapport demande. Elle passe avant la
+stabilité et les caméras : sans point de vue libre, la projection image par image de SAM 3D Body suffit à placer l'avatar.
 
-**Sortie :** plus de 95 % des plans dans le bon groupe et des images attribuées à la bonne personne, sur les annotations.
+**Branche :** `feature/avatar-render`. **Script :** `research/scene3d/render_avatars.py`.
 
-### Jalon 2 : cohérence temporelle et visage
+- **Entrées :** archives de paramètres MHR (`sam3d_params`, dense, mode `full`, pour garder les mains : l'agitation des mains
+  compte pour un psychologue), groupes de caméra et fonds (`decor_cameras/`), `subtitles.ass`, son d'origine.
+- **Maillage :** reconstruit sur GPU par MHR à partir des paramètres, comme `mesh_eval.py` ; dessin par le peintre OpenCV de
+  `render_video.py` (24 images/s mesurées), une couleur fixe par personne.
+- **Niveaux** (section 4) : A0+ (avatar sur l'original, contrôle), A2 (fond de scène du groupe de caméra ; repli : fond
+  gris si le plan n'a pas de fond), A3 (morphologie moyenne : paramètres d'identité et d'échelle remplacés par leur moyenne
+  sur toutes les personnes), A4 (fond gris uniforme).
+- **Sorties :** une vidéo par niveau avec son et sous-titres, une planche d'exemples (une image par groupe de caméra et par
+  niveau) pour le rapport, temps de rendu par image.
+- **Vérification :** à l'œil sur chaque groupe de caméra ; points 2D du maillage reprojeté identiques à ceux de l'archive
+  (contrôle de la reconstruction).
+- **Limites à tracer, pas à corriger ici :** personne qui change de couleur d'un plan à l'autre (E4), plans d'incrustation,
+  trou du fond, tremblement (E3).
 
-- Morphologie et échelle par personne : médiane contre première image.
-- Lissage plan par plan : Kalman contre fenêtre glissante.
-- Visage : mesurer `expr_params`, en particulier avec le micro devant la bouche.
-- Images clés (branche `optim/mesh-keyframes`, voir 2.3) : interpolation dans les paramètres MHR, temps réel mesuré. Comparer
-  l'espacement fixe au découpage récursif avec un budget. Vérifier sur des gestes marqués à la main, et sur une vraie caméra mobile.
+### E3. Stabilité
 
-**Sortie :** accélération médiane divisée par au moins 2 et OKS en baisse de moins de 0,01. La borne sur l'OKS protège
-contre un lissage qui effacerait les gestes.
+**But :** une vidéo regardable sans sauts : un psychologue ne doit pas prendre un tremblement du modèle pour un mouvement.
 
-### Jalon 3 : caméras et fonds
+**Branche :** `optim/mesh-keyframes` (suite).
 
-- Une focale par groupe de caméra (MoGe, médiane) et par facteur de zoom relié.
-- Une profondeur stable par personne : l'échelle vient de la morphologie verrouillée.
-- Fonds complétés dans le trou que l'avatar ne couvre pas.
+- **Morphologie et échelle par personne :** médiane sur toutes ses images, à la place de la valeur de chaque image.
+- **Lissage à l'intérieur de chaque plan, jamais à travers une coupe :** filtre One Euro contre fenêtre glissante
+  (Savitzky-Golay) sur les paramètres de pose, angles déroulés comme dans `run_keyframes.py`. Le Kalman de SAM-Body4D
+  seulement si les deux échouent.
+- **Choix de production à trancher sur ces mesures :** dense `full` (mains, 2 h 43 sur le talk-show) contre `body` + images
+  clés (18 min, mains grossières). Les mains comptent pour le cas d'utilisation.
+- **Mesures :** accélération médiane (divisée par 2 visé), OKS sur les 200 images annotées (baisse de moins de 0,01),
+  erreur du poignet sur les 10 % de gestes les plus rapides (ne doit pas augmenter de plus de 20 %), et la vidéo.
 
-**Sortie, par des invariants vérifiables sans vérité 3D :** bassin d'une personne assise stable à moins de 10 cm dans un
-groupe ; plus aucune profondeur aberrante ; OKS du maillage reprojeté à 0,02 près.
+### E4. Personnes et plans
 
-### Jalon 4 : première vidéo reproduite
+**But :** une couleur et une morphologie par personne sur toute la vidéo, un fond propre.
 
-- Avatar d'une couleur par personne sur le fond de scène, son et sous-titres, à côté de l'original.
-- Essai de rendu : OpenCV contre rasteriseur GPU ou Blender, sur 8 Go.
+- **Fusion des pistes d'une même personne :** distance entre morphologies médianes, et deux pistes visibles dans la même
+  image ne peuvent pas être la même personne. Vérité : attribution des pistes annotée à la main (3 pistes, quelques minutes).
+- **Plans d'incrustation** (logo plein écran, vidéos insérées) : marqués, sans fond ni avatar.
+- **Trou du fond :** fusion des fonds des cadrages reliés, puis remplissage OpenCV ; l'avatar couvre le reste.
+- **Focale par caméra (MoGe) : reportée.** Sans point de vue libre, elle ne change pas l'image. On n'y revient que si
+  l'échelle de l'avatar saute visiblement à l'écran.
 
-**Sortie :** vidéo complète du talk-show, vérifiée à l'œil sur chaque type de plan. **C'est la preuve de l'objectif de base.**
+**Sortie :** plus de 95 % des images attribuées à la bonne personne.
 
-### Jalon 5 : utilité (A0 à A4)
+### E5. Utilité : le comportement reste-t-il observable ?
 
-Principe : passer les outils d'analyse sur la vidéo reproduite, puis comparer à l'original.
+**But :** chiffrer ce qu'un observateur perd en regardant l'avatar plutôt que l'original. C'est la mesure principale.
+
+**Branche :** `eval/avatar-utility`. Principe inchangé : passer les outils d'analyse sur la vidéo rendue et comparer à
+l'original, pour les niveaux A1 (visage flouté, la pratique courante) à A4.
 
 | Comportement | Mesure |
 |---|---|
 | Corps | ViTPose sur le rendu, OKS contre les 200 images annotées |
-| Tête | Corrélation de l'orientation et des hochements |
-| Gestes | Corrélation de la vitesse des poignets, rappel des gestes marqués à la main |
-| Bouche | Corrélation de l'ouverture avec MediaPipe, activité pendant les tours de parole (sous-titres de référence) |
+| Gestes | Corrélation de la vitesse des poignets ; part des gestes rapides de l'original retrouvés sur le rendu |
+| Tête | Corrélation de l'orientation et des hochements (MediaPipe sur l'original, tête du maillage sur le rendu) |
+| Bouche | Corrélation de l'ouverture ; activité pendant les tours de parole (sous-titres de référence) |
 | Expressions | Comparaison des coefficients. OpenFace sur un avatar est un essai, pas une garantie |
-| Interaction | Orientation mutuelle et synchronie, à l'intérieur des plans larges seulement |
+| Interaction | Orientation mutuelle et synchronie, dans les plans larges seulement |
 
-### Jalon 6 : confidentialité
+**À décider avec les encadrants :** une petite étude de perception (3 à 5 personnes regardent des extraits originaux et avec
+avatars et notent les comportements qu'elles voient). C'est la mesure la plus proche du cas d'utilisation, mais elle demande
+des participants et un cadre.
 
-**Principe :** jouer l'attaquant. Un modèle de réidentification reçoit une vidéo modifiée et classe une galerie de
-personnes connues. Le **Rank-1** est la part des cas où la bonne personne arrive en tête.
+### E6. Ce qui reste de l'identité (MEVID)
+
+**But :** chiffrer ce que l'avatar laisse de l'identité, en particulier par le mouvement (le risque cité à la réunion), et la
+fiabilité de la chaîne dans des conditions réelles. Ce n'est **pas** une preuve d'anonymisation.
+
+**Branche :** `experiment/mevid-reid` (à partir de `experiment/mevid-small-crops`).
 
 **Corpus : MEVID**, partie test (choix du 2026-11-09). Données MEVA sous CC BY 4.0, avec actrices et acteurs inscrits.
 
@@ -337,25 +420,31 @@ visages : c'est aussi de la surveillance. Avec une seule tenue par personne, ret
 rien dire du corps. Ses pistes sont aussi plus courtes (25 à 50 images), ce qui gêne l'attaque de démarche. Sa page officielle
 reste à confirmer. On n'y va que si l'écart de référence de MEVID (52,5 %) se révèle trop étroit pour conclure.
 
-**Niveaux :** N0 vidéo d'origine, N1 flou gaussien sur le visage, N2 avatar avec sa morphologie, N3 avatar à morphologie moyenne.
+**E6.1 Référence d'apparence (CAL).** Code de l'article MEVID (dossier `CAL`) et poids publiés dans son tableau de résultats.
+Extraire toute la partie test (1,19 million d'images, archive de 13 Go déjà téléchargée), **retrouver 52,5 % de Rank-1 et 27,1 %
+de mAP avec leur protocole**. Puis refaire l'évaluation avec nos fenêtres de 32 images : c'est la référence N0 des mesures
+suivantes, et l'écart entre les deux protocoles est à publier.
 
-**Attaquants :**
+**E6.2 Rendu des fenêtres.** Paramètres déjà calculés (2.4). Rendu à la taille de la découpe, **sur fond gris** : garder le fond
+de la découpe laisserait le lieu et la caméra identifier la piste. N2 morphologie propre, N3 morphologie moyenne. N1 (visage
+flouté) demande un détecteur de visage : taux de détection donné par taille.
 
-| Attaquant | Ce qu'il a | Ce que ça mesure |
-|---|---|---|
-| Naïf | Galerie d'origine, modèle entraîné sur de vraies vidéos | Ce que l'apparence seule laisse passer. **Le plus faible : un score bas ne prouve rien à lui seul** |
-| Informé | Galerie passée au même traitement | Ce qui reste commun aux avatars d'une même personne : morphologie et mouvement |
-| Visage | Reconnaissance faciale, avec les photos d'inscription des personnes de MEVID (600 Mo) comme galerie | Ce que le visage laisse passer, surtout au niveau du flou |
-| Démarche | Modèle de démarche (GaitBase d'OpenGait, licence à vérifier) | La signature du mouvement, qu'un modèle d'apparence ne voit pas |
-| Adaptatif (si le temps le permet) | Modèle réentraîné sur des avatars | Le pire cas réaliste. En voix, ce type d'attaquant fait nettement mieux que les autres (VoicePrivacy 2020) |
+**E6.3 Contrôle de qualité, toujours à côté du score.** Filtre ViTPose (2.4), accord avec ViTPose, par taille de découpe. Un avatar
+raté donne aussi le hasard (1,7 %).
 
-**Déroulement :**
+**E6.4 Attaquants.**
 
-1. Modèle d'attaque : d'abord CAL, le meilleur publié sur MEVID, avec ses poids. **Retrouver ses 52,5 % de Rank-1 (mAP 27,1)
-   avant toute autre mesure :** c'est la vérification que notre évaluation est juste. OSNet ensuite, en second avis.
-2. Rendre une fenêtre de 32 images consécutives par piste : 1,9 h pour les requêtes et 8,7 h pour la galerie, à 0,69 s par image
-   (à remesurer, les images sont plus petites). Tout rendre prendrait 39 h pour les seules requêtes.
-3. Publier Rank-1, mAP et la courbe CMC, séparés entre même tenue et autre tenue, avec un intervalle de confiance par identité.
+| Attaquant | Ce qu'il a | Coût | Ce qu'il mesure |
+|---|---|---|---|
+| Morphologie | Plus proche voisin sur les paramètres d'identité MHR moyens de la piste, sans entraînement | Minutes : paramètres déjà là | Ce que N2 laisse et que N3 doit retirer |
+| Apparence naïf | CAL entraîné sur de vraies vidéos, galerie d'origine, requêtes N1 à N3 | Après E6.1 | Ce que l'apparence seule laisse passer. Le plus faible |
+| Apparence informé | CAL, galerie et requêtes au même niveau | Après E6.1 | Ce qui reste commun aux avatars d'une même personne |
+| Mouvement, simple | Plus proche voisin sur des descripteurs de mouvement indépendants de la morphologie (angles des articulations, cadence, sur 32 images) | Une heure | Borne basse de la signature du mouvement |
+| Mouvement, appris | Modèle de démarche sur squelettes (GaitGraph2 ou SkeletonGait d'OpenGait : poids et format d'entrée à vérifier), sinon entraîné sur la partie train de MEVID (30,5 Go, SAM 3D Body à passer dessus) | Jours | La signature du mouvement face à un attaquant réaliste |
+
+**E6.5 Lecture.** Rank-1, mAP et courbe CMC ; même tenue contre autre tenue ; par taille de découpe ; intervalle de confiance
+par rééchantillonnage des identités ; protocole MEVID (même personne et même caméra exclues). Un score de mouvement au-dessus
+du hasard n'est pas un défaut à corriger : c'est le prix de l'utilité, et le résultat attendu est un compromis chiffré.
 
 **Trois précautions de lecture :**
 
@@ -375,16 +464,32 @@ reste à confirmer. On n'y va que si l'écart de référence de MEVID (52,5 %) s
   mesurer, et les résultats sont à donner par taille d'image.
 - Les images sans personne sont à écarter, avec la même règle pour tous les niveaux. Sinon, elles fausseraient la comparaison.
 
-### Jalon 7 : élargir
+### E7. Rapport v7
 
-- Tenue sur V1 (caméra fixe), V2 (film) et V4 (danse).
+**But :** la version à montrer à la réunion du 24 novembre, dans la structure demandée (`14_reunion_2026-11-10.md`, section 1).
+
+**Branche :** `docs/report-v7`. PDF : `research/report/report-psifx-v7.pdf`, v6 conservé.
+
+- **Structure :** contexte, objectifs et questions ; état de l'art et positionnement ; approche ; implémentation ;
+  expériences et évaluation ; résultats et limites ; discussion et conclusion ; gestion de projet.
+- **Vocabulaire :** « retirer l'apparence », plus jamais « anonymiser » ni « pseudonymiser » pour décrire le résultat.
+- **État de l'art :** librairies (psifx et voisines), modèles, méthodes académiques (section 3.3) et solutions commerciales
+  (brighter AI, et d'autres à rechercher), avec un tableau récapitulatif de ce qui est couvert ou non.
+- **Schémas :** architecture de la chaîne (section 4), déroulement des images clés, architecture de SAM 3D Body et de MHR.
+- **Résultats déjà mesurés (2.4) :** tableaux et graphiques.
+- **Exemples visuels :** planche d'avatars (E2), planche MEVID par taille.
+- **Gestion de projet :** fil rouge, branches, décisions et pistes abandonnées.
+
+### E8. Élargir
+
+- Tenue sur V1 (caméra fixe), V2 (film) et V4 (danse), et une vraie vidéo à caméra mobile.
 - Commandes psifx si le format est stable : `psifx video mesh sam3d_body inference`, `psifx scene build`, `psifx scene render`.
 
 ## 6. Risques
 
 | Risque | Conséquence | Réponse |
 |---|---|---|
-| Le mouvement seul identifie la personne | L'objectif de confidentialité reste partiel | C'est un résultat à publier tel quel : on mesure, et on dit ce qui reste |
+| Le mouvement seul identifie la personne | Pas de garantie d'anonymat | Attendu (réunion du 10 novembre) : on mesure et on dit ce qui reste ; le cas d'utilisation n'exige pas l'anonymat |
 | Le micro cache la bouche | Lèvres fausses, utilité faible sur ce point | Mesure dédiée, statut par image |
 | Lissage qui efface les gestes | Comportement faussé | Garde-fou OKS, gestes marqués à la main |
 | Échéance de fin décembre, et direction qui peut encore changer | Objectif de thèse incomplet | Priorités du fil rouge (section 5) |
@@ -411,9 +516,19 @@ reste à confirmer. On n'y va que si l'écart de référence de MEVID (52,5 %) s
 5. Piste VTuber abandonnée. Piste des points clés du décor à creuser.
 6. Corpus de confidentialité : MEVID, pour ses tenues multiples et son côté non contrôlé. MARS seulement en complément, si besoin.
 
+**Prises le 2026-11-10 (réunion) et le 2026-11-18 :**
+
+7. Ni « anonymisation » ni « pseudonymisation » : « retirer l'apparence ».
+8. Cas d'utilisation principal : formation de psychologues et analyse de situations avec la vidéo à avatars.
+9. L'utilité passe avant la confidentialité ; la vidéo avec avatars (E2) passe avant la stabilité et les caméras.
+10. La confidentialité devient « ce qui reste de l'identité », avec un attaquant de mouvement obligatoire.
+11. Focale par caméra (MoGe) reportée : sans point de vue libre, elle ne change pas l'image.
+12. Rapport v7 dans la structure du professeur pour la réunion du 2026-11-24.
+
 **Restent ouvertes :**
 
-1. Confirmation de l'objectif de thèse à la réunion du 2026-11-09.
+1. Petite étude de perception pour l'utilité (E5) : à proposer aux encadrants.
+2. Attaquant de mouvement appris : modèle publié ou entraînement sur la partie train de MEVID (E6.4).
 
 ## Sources
 
@@ -439,3 +554,6 @@ reste à confirmer. On n'y va que si l'écart de référence de MEVID (52,5 %) s
   https://arxiv.org/html/2601.11635, https://openaccess.thecvf.com/content/WACV2025/papers/Kung_Face_Anonymization_Made_Simple_WACV_2025_paper.pdf,
   https://www.sciencedirect.com/science/article/pii/S107158192500045X, https://arxiv.org/pdf/2410.17098
 - Voix et RGPD : https://arxiv.org/pdf/2404.02677, https://www.ucl.ac.uk/data-protection/data-protection/guidance/how/de-identifying-personal-data
+- Réunion du 2026-11-10 et suites : voir les sources de `14_reunion_2026-11-10.md` ; MEVID, poids des modèles de référence :
+  https://github.com/Kitware/MEVID ; démarche sur squelettes : https://github.com/tteepe/GaitGraph2/blob/main/README.md,
+  https://arxiv.org/pdf/2311.13444.pdf, https://arxiv.org/pdf/2205.02692
