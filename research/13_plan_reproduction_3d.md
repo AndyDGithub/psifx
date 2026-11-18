@@ -360,8 +360,12 @@ stabilité et les caméras : sans point de vue libre, la projection image par im
 
 **But :** une couleur et une morphologie par personne sur toute la vidéo, un fond propre.
 
-- **Fusion des pistes d'une même personne :** distance entre morphologies médianes, et deux pistes visibles dans la même
-  image ne peuvent pas être la même personne. Vérité : attribution des pistes annotée à la main (3 pistes, quelques minutes).
+- **Fusion des pistes d'une même personne.** Constat du 2026-11-18 : les 3 pistes SAM3 du talk-show sont visibles ensemble sur
+  712 à 2 808 images, et pourtant la même femme change de numéro d'un plan à l'autre ; des avatars apparaissent aussi sur des
+  danseurs d'une vidéo insérée en écran partagé. Une piste n'est donc pas une personne. Méthode : couper chaque piste par plan,
+  écarter les morceaux situés dans une incrustation, puis regrouper les morceaux par morphologie médiane, sous la contrainte que
+  deux morceaux d'un même plan sont deux personnes. Vérité : étiqueter les 293 personnes des 200 images annotées (l'homme, la
+  femme, incrustation), car les annotations de pose n'ont pas d'identité.
 - **Plans d'incrustation** (logo plein écran, vidéos insérées) : marqués, sans fond ni avatar.
 - **Trou du fond :** fusion des fonds des cadrages reliés, puis remplissage OpenCV ; l'avatar couvre le reste.
 - **Focale par caméra (MoGe) : reportée.** Sans point de vue libre, elle ne change pas l'image. On n'y revient que si
