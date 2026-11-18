@@ -70,7 +70,7 @@ def identity_attacks(attacks: dict, cal: dict | None, out: Path) -> None:
         ax.axvline(value, color=color, lw=1, ls="--", label=label)
     ax.plot([], [], "o", color=BLUE, label="général")
     ax.plot([], [], "o", color=ORANGE, label="autre tenue")
-    ax.legend(frameon=False, loc="lower right", fontsize=8)
+    ax.legend(frameon=False, loc="upper right", fontsize=8)
     ax.set_yticks(range(len(rows)), [r[0] for r in rows])
     ax.set_ylim(len(rows) - 0.5, -0.5)  # First attacker on top.
     ax.set_xlabel("Rank-1 (%), intervalle à 95 % par rééchantillonnage des identités", fontsize=8, color=MUTED)

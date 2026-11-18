@@ -2120,6 +2120,75 @@ En haut un plan large, en bas un gros plan. Les avatars suivent la posture, l'or
     tant que ses pistes ne sont pas fusionnées.
 \end{itemize}
 
+\section{Une personne, un avatar}
+\label{sec:res-people}
+
+Sur la vidéo, une même personne doit garder sa couleur et sa morphologie. Or une piste SAM3 n'est pas toujours une personne : sur le
+talk-show, la femme a deux pistes (gros plans et plans larges), et des danseurs d'une vidéo insérée en écran partagé reçoivent des
+avatars. Pour le mesurer, les 297 personnes des 200 images annotées ont été étiquetées (l'homme, la femme, incrustation, ou non
+identifiable) ; cet étiquetage a été fait par l'assistant à partir de planches de découpes, et reste à vérifier par l'auteur.
+
+\begin{table}[H]
+\centering
+\caption{Attribution des 176 personnes annotées reliées à un maillage. Chaque identifiant prédit prend son étiquette majoritaire.}
+\label{tab:people}
+\small
+\begin{tabularx}{\textwidth}{@{}Yr@{}}
+\toprule
+Méthode & Bien attribuées \\
+\midrule
+Pistes SAM3 telles quelles (3 pistes) & 94,3\,\% \\
+Morceaux de pistes regroupés par la morphologie & 52,8\,\% \\
+Pistes fusionnées par la morphologie & 54,5\,\% \\
+\textbf{Pistes fusionnées par les couleurs du masque, morceaux aberrants écartés} & \textbf{96,0\,\%} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{itemize}
+    \item \textbf{La morphologie ne reconnaît pas les personnes ici} : regrouper par les paramètres d'identité confond l'homme et la
+    femme, car l'estimation change avec le cadrage (gros plan ou plan large).
+    \item \textbf{Les couleurs du masque réunissent les deux pistes de la femme} et écartent 3 des 9 danseurs de la vidéo insérée.
+    Les couleurs ne servent qu'à construire les avatars, jamais au partage. Le seuil (0,4) a été choisi sur ces mêmes étiquettes :
+    96,0\,\% est un peu optimiste.
+\end{itemize}
+
+\section{Des avatars stables}
+\label{sec:res-smooth}
+
+Une fois les personnes réunies, leur morphologie est fixée (médiane sur toutes leurs images) et leur pose lissée dans chaque plan
+(tableau~\ref{tab:smooth}). Pour mesurer l'effet sur les points, chaque point COCO est reconstruit à partir du maillage par une
+combinaison de ses 16 sommets les plus proches, ajustée sur les images brutes (erreur médiane de 0,4 à 0,7~mm) ; sur les images brutes,
+ces points redonnent l'OKS du modèle.
+
+\begin{table}[H]
+\centering
+\caption{Lissage sur le talk-show, par personne. Écart : distance aux points bruts sur les 10\,\% d'images aux poignets les plus rapides.}
+\label{tab:smooth}
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Variante & Tremblement (mm) & OKS & PCK des poignets & Écart, gestes rapides p95 (mm) \\
+\midrule
+Brut & 8,8 & 0,830 & 0,918 & 0 \\
+Morphologie fixée & 8,7 & 0,822 & 0,911 & 17 \\
++ Savitzky-Golay, 5 images & 4,5 & 0,823 & 0,920 & 47 \\
+\textbf{+ Savitzky-Golay, 7 images} & \textbf{3,1} & \textbf{0,823} & \textbf{0,917} & \textbf{57} \\
++ Savitzky-Golay, 11 images & 1,9 & 0,824 & 0,922 & 68 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{itemize}
+    \item Le lissage sur 7 images divise le tremblement par 2,8 sans toucher aux poignets (PCK 0,917 contre 0,918) : il n'efface pas
+    les gestes, ce qui compte pour le cas d'utilisation.
+    \item La petite baisse d'OKS (0,007) vient de la morphologie fixée, pas du lissage.
+    \item Un premier essai sur les pistes brutes, avant de réunir les personnes, donnait 230~mm d'écart aux gestes rapides : une piste
+    qui mélange deux personnes ne se lisse pas. Le filtre One Euro, essayé aussi, lisse plus mais fait baisser l'OKS (0,815).
+    \item L'OKS brut (0,830) est plus bas que celui des pistes d'origine (0,849), car les morceaux écartés comme \enquote{autre} n'ont
+    plus d'avatar, dont quelques vraies apparitions des deux personnes.
+\end{itemize}
+
 \section{Fiabilité sur des vidéos de surveillance (MEVID)}
 \label{sec:res-mevid}
 
@@ -2162,7 +2231,12 @@ sous 64~px ne sont pas montrées.}
 \section{Ce qui reste de l'identité : premières mesures}
 \label{sec:res-identity}
 
-\paragraph{Référence d'apparence.} \todo{CAL : Rank-1 et mAP retrouvés avec le protocole de l'article, contre 52,5 et 27,1\,\%.}
+\paragraph{Référence d'apparence.} CAL, avec le code et les poids publiés par les auteurs de MEVID, a été évalué sur toute la
+partie test (1,19 million d'images, 51~min sur la carte graphique partagée). On retrouve les chiffres de l'article : 52,5\,\% de
+Rank-1 (52,5 publié), 27,0\,\% de mAP (27,1) et 73,1\,\% de Rank-10 (73,7). L'évaluation est donc juste. Le même calcul montre
+aussi la limite de cet attaquant : quand la personne a changé de tenue, CAL ne la place en tête que dans \textbf{3,5\,\%} des cas
+(mAP 4,3\,\%), contre 56,6\,\% à tenue égale. L'apparence, même pour un modèle entraîné à ignorer les vêtements, repose encore
+surtout sur eux.
 
 \paragraph{Attaquants sur les paramètres.} Avant même de rendre les avatars, on peut mesurer ce que leurs paramètres laissent de
 l'identité. Chaque piste est décrite par la moyenne de ses paramètres d'identité (morphologie), de ses échelles de membres, ou par
@@ -2173,7 +2247,8 @@ entraînement (figure~\ref{fig:identity-attacks}).
 \centering
 \includegraphics[width=\textwidth]{figures/identity_attacks.pdf}
 \caption{Rank-1 des attaquants sans entraînement sur les paramètres MHR (276 requêtes MEVID). \enquote{Autre tenue} : la même
-personne dans la même tenue est retirée de la galerie. Les lignes pointillées donnent le hasard.}
+personne dans la même tenue est retirée de la galerie. Les lignes pointillées donnent le hasard. CAL, pour comparaison, est
+évalué sur toutes les images de toutes les pistes (protocole de l'article), les autres sur les fenêtres de 32 images filtrées.}
 \label{fig:identity-attacks}
 \end{figure}
 
@@ -2184,6 +2259,9 @@ personne dans la même tenue est retirée de la galerie. Les lignes pointillées
     \item \textbf{Le mouvement, décrit simplement, n'identifie pas} : il reste au niveau du hasard. Ce n'est qu'une borne basse :
     des statistiques d'angles sur 32 images de surveillance ne valent pas un modèle de démarche entraîné.
     \item Ces attaquants sont faibles par construction : ils fixent un plancher de ce qui reste de l'identité, pas un plafond.
+    \item \textbf{Face à un changement de tenue, la morphologie seule fait jeu égal avec CAL} sur les vidéos d'origine (3,7 contre
+    3,5\,\% de Rank-1, avec des intervalles larges) : quand les vêtements changent, ce qui reste pour reconnaître quelqu'un est surtout
+    son corps, ce qu'un avatar à sa morphologie (A2) garde.
 \end{itemize}
 
 % =============================================================================
