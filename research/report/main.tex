@@ -159,7 +159,9 @@ maillage à 0,2~mm et pèsent 30 fois moins que les sommets ; des images clés c
 2~h~43 à 18~min pour un OKS de 0,852. Le talk-show est reproduit avec avatars, son et sous-titres. Sur la partie test de MEVID
 (55\,291 découpes de surveillance), la chaîne tient dès 64~px avec un filtre des découpes sans personne ; un attaquant sans
 entraînement retrouve une personne par sa seule morphologie environ trois fois mieux que le hasard, mais pas par un mouvement décrit
-simplement. Restent à mesurer l'utilité et un attaquant de démarche entraîné.
+simplement ; CAL, le meilleur modèle publié sur MEVID, reproduit à 52,5\,\% de Rank-1, ne fait pas mieux (3,5\,\%) dès que la
+tenue change. Un outil de pose relit sur l'avatar ce que le modèle 3D a extrait (OKS 0,848), mais les mains restent le point faible.
+Restent à mesurer les autres comportements et un attaquant de démarche entraîné.
 
 \tableofcontents
 
@@ -586,7 +588,7 @@ ReGenHuman \cite{regenhuman2026} & oui & généré & non & oui & non & article \
 FAKER \cite{faker2025} & oui & squelette 2D & non & partielle & non & article \\
 Pantomime \cite{pantomime2026} & -- & -- & perturbé & oui & oui & article \\
 SAM~3D Body, SAM-Body4D \cite{sam3dbody2026, sambody4d2025} & -- & -- & oui & -- & non & libre \\
-\textbf{Ce travail} & \textbf{oui} & \textbf{avatar} & \textbf{oui} & \textbf{en cours} & \textbf{oui} & \textbf{psifx} \\
+\textbf{Ce travail} & \textbf{oui} & \textbf{avatar} & \textbf{oui} & \textbf{partielle} & \textbf{oui} & \textbf{psifx} \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -789,8 +791,8 @@ A4 & Avatar à morphologie neutre & Gris uniforme & Retire aussi le lieu \\
 \label{sec:utility}
 
 Le cas d'utilisation demande que le comportement reste observable. Le principe est de passer les outils d'analyse sur la vidéo
-rendue, puis de comparer à l'original, niveau par niveau (tableau~\ref{tab:utility}). C'est la mesure principale ; elle est en
-cours au moment de cette version.
+rendue, puis de comparer à l'original, niveau par niveau (tableau~\ref{tab:utility}). C'est la mesure principale ; la première
+ligne (le corps) est mesurée à la section~\ref{sec:res-utility}, les autres restent à faire.
 
 \begin{table}[H]
 \centering
@@ -2191,6 +2193,48 @@ Morphologie fixée & 8,7 & 0,822 & 0,911 & 17 \\
     plus d'avatar, dont quelques vraies apparitions des deux personnes.
 \end{itemize}
 
+\section{Utilité : un outil lit-il encore le corps sur l'avatar ?}
+\label{sec:res-utility}
+
+ViTPose, le meilleur modèle de pose sur ces annotations, est passé sur l'original et sur chaque vidéo avec avatars, aux 200 images
+annotées, avec les mêmes boîtes de personnes pour toutes les vidéos : seule la lecture de la pose est mesurée, pas la détection
+(tableau~\ref{tab:res-utility}).
+
+\begin{table}[H]
+\centering
+\caption{ViTPose sur les vidéos, contre les annotations du talk-show. \enquote{Final} : personnes réunies et lissées.}
+\label{tab:res-utility}
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Vidéo & OKS & PCK@0,1 & PCK poignets & PCK tête \\
+\midrule
+Original (A0) & 0,936 & 0,970 & 0,968 & 0,973 \\
+A2, pistes brutes & 0,848 & 0,900 & 0,787 & 0,948 \\
+A3, pistes brutes & 0,695 & 0,887 & 0,798 & 0,907 \\
+A4, pistes brutes & 0,696 & 0,895 & 0,845 & 0,909 \\
+A2 final & 0,815 & 0,865 & 0,744 & 0,924 \\
+A3 final & 0,681 & 0,854 & 0,750 & 0,884 \\
+A4 final & 0,685 & 0,868 & 0,820 & 0,886 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{itemize}
+    \item \textbf{L'avatar transmet ce que le modèle a extrait.} Sur A2, ViTPose relit un OKS de 0,848, celui de SAM~3D Body lui-même
+    (0,849) : la perte par rapport à l'original vient de l'estimation 3D, pas du rendu.
+    \item \textbf{La tête reste très lisible} (0,92 à 0,95), \textbf{les poignets beaucoup moins} (0,74 à 0,85 contre 0,97). Pour le cas
+    d'utilisation, où l'agitation des mains compte, c'est le point faible à travailler.
+    \item \textbf{La morphologie neutre coûte en OKS (0,85 à 0,70), peu en PCK@0,1 (0,90 à 0,89).} Les annotations décrivent le vrai
+    corps : des proportions standard déplacent les articulations de quelques centimètres sans perdre la posture.
+    \item \textbf{Le fond gris aide les poignets} (0,82 à 0,85 contre 0,74 à 0,80), sans doute parce que la main se détache mieux.
+    \item \textbf{La version finale perd un peu par couverture} : les morceaux écartés comme \enquote{autre} n'ont plus d'avatar, dont
+    quelques vraies apparitions. Elle gagne une couleur par personne et un tremblement divisé par 2,8.
+\end{itemize}
+
+Ce test lit le corps avec un outil, image par image. Il ne dit pas encore si un observateur voit les mêmes comportements : c'est ce
+que les mesures suivantes (gestes dans le temps, tête, bouche) et une éventuelle étude de perception doivent établir.
+
 \section{Fiabilité sur des vidéos de surveillance (MEVID)}
 \label{sec:res-mevid}
 
@@ -2408,8 +2452,9 @@ Plusieurs écueils rencontrés valent d'être notés, car ils faussent silencieu
 les sommets, et la vidéo avec avatars se superpose aux personnes dans tous les cadrages du talk-show. Le coût reste le point faible :
 2~h~43 pour 5~min de vidéo en mode \code{full}. Les images clés et le mode \code{body} le ramènent à 18~min, au prix des doigts.
 
-\paragraph{Q7 : l'utilité reste à mesurer.} La vérification à l'œil est encourageante (posture, tête, mains), mais c'est la mesure
-principale du cas d'utilisation et elle n'est pas encore faite (section~\ref{sec:utility}).
+\paragraph{Q7 : le corps reste lisible, les mains moins.} Un outil de pose relit sur l'avatar ce que le modèle 3D a extrait (OKS
+0,848 contre 0,849), la tête reste très lisible, mais les poignets perdent beaucoup (section~\ref{sec:res-utility}). Les autres
+comportements (gestes dans le temps, bouche, expressions) et la perception humaine restent à mesurer.
 
 \paragraph{Q8 : ce qui reste de l'identité.} Les premières mesures vont dans le sens de la réunion du 10 novembre :
 \begin{itemize}
