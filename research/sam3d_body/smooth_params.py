@@ -15,7 +15,7 @@ reported). Then, per variant:
 - ``jitter_mm``: median acceleration of the 17 keypoints around the pelvis;
 - ``change_mm`` p50 / p95: distance to the raw keypoints, on all frames and on the 10 % fastest wrist frames
   (``gestures``): smoothing must not erase gestures;
-- ``oks``: the rebuilt keypoints projected with the archive camera, against the talk-show annotations; ``raw`` also
+- ``oks``, ``pck@0.05`` and ``wrists_pck`` (PCK at 0.1 of the two wrists): the rebuilt keypoints projected with the archive camera, against the talk-show annotations; ``raw`` also
   gives the OKS of the archive's own 2D keypoints, to see what the rebuild costs.
 
 Writes ``<pipeline>/smoothing.json`` and, for ``--keep``, the archives of that variant in ``<pipeline>/<keep>/``
@@ -37,7 +37,8 @@ import torch
 from scipy.signal import savgol_filter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from mesh_eval import annotations  # noqa: E402
+import mesh_eval  # noqa: E402,F401  (puts research/pose_annotation on the path)
+from evaluate import evaluate, load_ground_truth  # noqa: E402
 from run_keyframes import cut_labels, split_segments  # noqa: E402
 from run_tracks import MHR70_TO_COCO17  # noqa: E402
 
@@ -118,6 +119,25 @@ def fit_regressor(vertices: np.ndarray, keypoints: np.ndarray, rng) -> tuple[np.
 
 def apply_regressor(vertices: np.ndarray, nearest: np.ndarray, weights: np.ndarray) -> np.ndarray:
     return np.einsum("fknc,kn->fkc", vertices[:, nearest], weights)
+
+
+def annotation_scores(archives: dict, folder: Path) -> dict:
+    """OKS as in mesh_eval.annotations, plus the wrists' PCK: smoothing must not move the hands away from the truth."""
+    index = {person: {int(f): i for i, f in enumerate(a["frames"])} for person, a in archives.items()}
+    predictions = {}
+    for line in (folder / "frames.csv").read_text().splitlines()[1:]:
+        name, frame, _ = line.split(",")
+        people = []
+        for person, a in archives.items():
+            i = index[person].get(int(frame), index[person].get(int(frame) - 1))
+            if i is not None:
+                points = a["keypoints_2d"][i][MHR70_TO_COCO17].astype(float)
+                people.append(np.concatenate([points, np.ones((len(points), 1))], axis=1))
+        predictions[name] = people
+    result = evaluate(predictions, load_ground_truth(folder / "ground_truth.json"), min_score=0.3)
+    per_keypoint = next(v for k, v in result.items() if k.endswith("_per_keypoint"))
+    return {"oks": round(result["oks"], 3), "pck@0.05": result["pck@0.05"],
+            "wrists_pck": round((per_keypoint["left_wrist"] + per_keypoint["right_wrist"]) / 2, 3)}
 
 
 def measures(k3: np.ndarray, raw: np.ndarray, fast: np.ndarray) -> dict:
@@ -203,11 +223,11 @@ def main():
                  "change_mm_p50_p95": [round(float(v), 1) for v in np.percentile(change, [50, 95])],
                  "gestures_change_mm_p50_p95": [round(float(v), 1) for v in np.percentile(gestures, [50, 95])]}
         if args.annotations:
-            entry["oks"] = round(annotations(projected[variant], args.annotations)["oks"], 3)
+            entry.update(annotation_scores(projected[variant], args.annotations))
         report[variant] = entry
         print(variant, json.dumps(entry), flush=True)
     if args.annotations:
-        report["raw_archive_keypoints_oks"] = round(annotations(archives, args.annotations)["oks"], 3)
+        report["raw_archive_keypoints"] = annotation_scores(archives, args.annotations)
     (args.pipeline / "smoothing.json").write_text(json.dumps(report, indent=1))
     print("SMOOTH_OK")
 
