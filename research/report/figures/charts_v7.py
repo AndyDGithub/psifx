@@ -3,7 +3,7 @@
 - ``mevid_quality.pdf``: SAM 3D Body on the MEVID test split by crop height, three small multiples (one measure
   each, one axis each): agreement with ViTPose, jitter, failed chips without and with the filter;
 - ``identity_attacks.pdf``: Rank-1 of each attacker with its 95 % interval, general and other outfit settings,
-  with the chance level of each setting.
+  with the chance level of each setting; GaitGraph2 rows when gait_attack.json exists.
 Palette: categorical slots 1 and 2 of the dataviz reference palette, validated for color vision deficiency.
 
     python research/report/figures/charts_v7.py .e2e_outputs/ext/mevid research/report/figures
@@ -54,10 +54,14 @@ def mevid_quality(summary: dict, out: Path) -> None:
     fig.savefig(out / "mevid_quality.pdf")
 
 
-def identity_attacks(attacks: dict, cal: dict | None, out: Path) -> None:
+def identity_attacks(attacks: dict, cal: dict | None, gait: dict | None, out: Path) -> None:
     names = {"shape": "Morphologie", "shape_scale": "Morphologie + échelle", "motion": "Mouvement (simple)",
              "all": "Les trois"}
     rows = [(names[k], v["general"]["rank1"], v["other_outfit"]["rank1"]) for k, v in attacks["attackers"].items()]
+    if gait:  # GaitGraph2 (gait_attack.py): same tracklets, queries and settings.
+        for k, name in (("original", "Démarche GaitGraph2, vidéo d'origine"), ("avatar_own", "Démarche, avatars A2"),
+                        ("avatar_neutral", "Démarche, avatars A3")):
+            rows.append((name, gait["mevid"][k]["general"]["rank1"], gait["mevid"][k]["other_outfit"]["rank1"]))
     if cal:
         rows.append(("CAL, vidéo d'origine", [cal["general"]["rank1"]] * 3, [cal["CC"]["rank1"]] * 3))
     fig, ax = plt.subplots(figsize=(7.2, 0.45 * len(rows) + 1.0), constrained_layout=True)
@@ -90,7 +94,9 @@ def main():
     cal_path = args.mevid / "cal_eval" / "full.json"
     cal = json.loads(cal_path.read_text()) if cal_path.is_file() else None
     mevid_quality(json.loads(summary.read_text()), args.out)
-    identity_attacks(json.loads(attacks.read_text()), cal, args.out)
+    gait_path = args.mevid / "test_split" / "gait_attack.json"
+    gait = json.loads(gait_path.read_text()) if gait_path.is_file() else None
+    identity_attacks(json.loads(attacks.read_text()), cal, gait, args.out)
     print("CHARTS_OK")
 
 

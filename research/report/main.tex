@@ -161,7 +161,9 @@ maillage à 0,2~mm et pèsent 30 fois moins que les sommets ; des images clés c
 entraînement retrouve une personne par sa seule morphologie environ trois fois mieux que le hasard, mais pas par un mouvement décrit
 simplement ; CAL, le meilleur modèle publié sur MEVID, reproduit à 52,5\,\% de Rank-1, ne fait pas mieux (3,5\,\%) dès que la
 tenue change. Un outil de pose relit sur l'avatar ce que le modèle 3D a extrait (OKS 0,848), mais les mains restent le point faible.
-Restent à mesurer les autres comportements et un attaquant de démarche entraîné.
+Un modèle de démarche publié (GaitGraph2), reproduit sur CASIA-B, reste au niveau du hasard sur MEVID même sur les vidéos
+d'origine, alors que les avatars gardent l'essentiel du mouvement qu'il lit. Restent à mesurer les autres comportements et un
+attaquant de démarche entraîné sur des vidéos de surveillance.
 
 \tableofcontents
 
@@ -2141,10 +2143,10 @@ identifiable) ; cet étiquetage a été fait par l'assistant à partir de planch
 \toprule
 Méthode & Bien attribuées \\
 \midrule
-Pistes SAM3 telles quelles (3 pistes) & 94,3\,\% \\
+Pistes SAM3 telles quelles (3 pistes) & 94,9\,\% \\
 Morceaux de pistes regroupés par la morphologie & 52,8\,\% \\
 Pistes fusionnées par la morphologie & 54,5\,\% \\
-\textbf{Pistes fusionnées par les couleurs du masque, morceaux aberrants écartés} & \textbf{96,0\,\%} \\
+\textbf{Pistes fusionnées par les couleurs du masque, morceaux aberrants écartés} & \textbf{96,6\,\%} \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -2154,7 +2156,9 @@ Pistes fusionnées par la morphologie & 54,5\,\% \\
     femme, car l'estimation change avec le cadrage (gros plan ou plan large).
     \item \textbf{Les couleurs du masque réunissent les deux pistes de la femme} et écartent 3 des 9 danseurs de la vidéo insérée.
     Les couleurs ne servent qu'à construire les avatars, jamais au partage. Le seuil (0,4) a été choisi sur ces mêmes étiquettes :
-    96,0\,\% est un peu optimiste.
+    96,6\,\% est un peu optimiste.
+    \item Les étiquettes, posées à partir de planches de découpes, ont été vérifiées par l'auteur sur une page de relecture
+    (\code{review\_labels.py}) : 4 corrections sur 297, qui ne changent pas les conclusions.
 \end{itemize}
 
 \section{Des avatars stables}
@@ -2300,7 +2304,7 @@ entraînement (figure~\ref{fig:identity-attacks}).
 \includegraphics[width=\textwidth]{figures/identity_attacks.pdf}
 \caption{Rank-1 des attaquants sans entraînement sur les paramètres MHR (276 requêtes MEVID). \enquote{Autre tenue} : la même
 personne dans la même tenue est retirée de la galerie. Les lignes pointillées donnent le hasard. CAL, pour comparaison, est
-évalué sur toutes les images de toutes les pistes (protocole de l'article), les autres sur les fenêtres de 32 images filtrées.}
+évalué sur toutes les images de toutes les pistes (protocole de l'article), les autres (dont GaitGraph2, section suivante) sur les fenêtres de 32 images filtrées.}
 \label{fig:identity-attacks}
 \end{figure}
 
@@ -2314,6 +2318,48 @@ personne dans la même tenue est retirée de la galerie. Les lignes pointillées
     \item \textbf{Face à un changement de tenue, la morphologie seule fait jeu égal avec CAL} sur les vidéos d'origine (3,7 contre
     3,5\,\% de Rank-1, avec des intervalles larges) : quand les vêtements changent, ce qui reste pour reconnaître quelqu'un est surtout
     son corps, ce qu'un avatar à sa morphologie (A2) garde.
+\end{itemize}
+
+\paragraph{Attaquant de démarche appris.} GaitGraph2 \cite{teepe2022gaitgraph2} transforme une suite de 17 points COCO en une
+signature d'identité (réseau de graphes sur les articulations, leurs vitesses et les os). Les poids publiés, appris sur CASIA-B
+(124 personnes filmées en laboratoire), sont utilisés tels quels. L'évaluation de l'article est d'abord reproduite sur la partie
+test de CASIA-B : 82,1 / 73,2 / 63,6\,\% de Rank-1 en marche normale, avec sac et avec manteau, pour 82,0 / 73,2 / 63,6\,\% publiés.
+Le chargement et le prétraitement sont donc justes\footnote{Le code actuel du dépôt construit un réseau à une branche d'entrée,
+alors que les poids publiés en ont trois ; le réseau est construit tel qu'il a été entraîné.}. Sur MEVID, chaque piste est ramenée à
+la taille et à la position d'un marcheur de CASIA-B, puis comparée selon le même protocole que les autres attaquants. Quatre sources
+de points sont testées : ViTPose sur les découpes d'origine, les points du modèle 3D, et ViTPose sur les découpes d'avatars A2 et A3,
+c'est-à-dire ce que lirait un attaquant qui n'a que la vidéo publiée (tableau~\ref{tab:gait}).
+
+\begin{table}[H]
+\centering
+\caption{GaitGraph2 (poids CASIA-B publiés) sur MEVID : 1\,560 pistes, 276 requêtes. Contrôle : la seconde moitié de la même piste
+retrouvée à partir de la première, parmi toutes les secondes moitiés (hasard 0,06\,\%).}
+\label{tab:gait}
+\small
+\begin{tabularx}{\textwidth}{@{}Yrrr@{}}
+\toprule
+Points d'entrée & Rank-1 général & Rank-1 autre tenue & Contrôle des moitiés \\
+\midrule
+ViTPose, vidéo d'origine & 2,5\,\% & 1,2\,\% & 45,3\,\% \\
+Points du modèle 3D & 1,4\,\% & 0,0\,\% & 46,5\,\% \\
+ViTPose, avatars A2 (morphologie propre) & 0,7\,\% & 0,8\,\% & 43,9\,\% \\
+ViTPose, avatars A3 (morphologie neutre) & 0,0\,\% & 0,0\,\% & 43,0\,\% \\
+Hasard & 1,7\,\% & 0,8\,\% & 0,06\,\% \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{itemize}
+    \item \textbf{D'une caméra à l'autre, GaitGraph2 ne reconnaît personne, même sur la vidéo d'origine} (2,5\,\% pour 1,7\,\% de
+    hasard). Le score des avatars ne prouve donc pas que la démarche est retirée : l'attaquant est trop faible ici. Causes probables :
+    le passage du laboratoire à la surveillance, des fenêtres de 32 images, des personnes qui ne marchent pas toujours, et des
+    découpes qui cadrent la personne sur place (le déplacement dans l'image, que CASIA-B montre, est perdu).
+    \item \textbf{Le contrôle montre que le signal passe} : la signature retrouve l'autre moitié de sa propre piste dans 45\,\% des
+    cas. Ce signal mêle l'identité, l'angle de vue et l'activité.
+    \item \textbf{Les avatars gardent presque tout ce mouvement} (43 à 44\,\% contre 45\,\%), y compris à morphologie neutre. C'est le
+    but pour l'utilité, et cela confirme la réunion du 10 novembre : ce que la démarche dit de l'identité, l'avatar le garde.
+    \item Un attaquant de démarche entraîné sur des vidéos de surveillance (la partie entraînement de MEVID) donnerait le plafond qui
+    manque. C'est le prochain pas de cette mesure.
 \end{itemize}
 
 % =============================================================================
@@ -2460,8 +2506,9 @@ comportements (gestes dans le temps, bouche, expressions) et la perception humai
 \begin{itemize}
     \item la morphologie seule identifie au-dessus du hasard, même face à un changement de tenue : garder la morphologie propre (A2),
     c'est garder un peu d'identité ; la remplacer (A3) la retire par construction ;
-    \item le mouvement, décrit simplement, n'identifie pas sur MEVID, mais un attaquant de démarche entraîné reste à tester : c'est
-    là que le risque cité à la réunion se mesurera vraiment ;
+    \item le mouvement n'identifie pas sur MEVID, ni décrit simplement, ni lu par un modèle de démarche publié (GaitGraph2, au
+    hasard même sur les vidéos d'origine) ; mais les avatars gardent l'essentiel du mouvement que ce modèle lit : si un attaquant
+    entraîné sur la surveillance reconnaît la démarche, il la reconnaîtra aussi sur l'avatar ;
     \item un score proche du hasard ne vaut que si l'avatar est réussi : c'est pourquoi chaque mesure d'identité est donnée avec la
     qualité des mêmes images, par taille.
 \end{itemize}
@@ -2525,8 +2572,8 @@ Période & Travail \\
 Septembre -- octobre 2026 & État de l'art, banc de mesure, intégration de quatre modèles de pose, optimisations d'inférence \\
 Octobre 2026 & Suites de la réunion du 13 octobre ; test de bout en bout ; correction du suivi SAM3 ; diarisation et MediaPipe modernisés \\
 Fin octobre -- début novembre 2026 & Tout fusionné sur \code{dev}, publication sur \code{main} ; vérité terrain du talk-show ; SAM~3D Body \\
-Novembre 2026 & Direction 3D : paramètres, images clés, caméras par le décor, vidéo avec avatars, MEVID ; premières mesures d'identité \\
-Décembre 2026 & Utilité, attaquant de démarche, stabilité ; rédaction finale (échéance de travail fin décembre, rendu en janvier) \\
+Novembre 2026 & Direction 3D : paramètres, images clés, caméras par le décor, vidéo avec avatars, MEVID ; une personne par avatar, stabilité, première mesure d'utilité ; attaquants d'identité (CAL, paramètres, GaitGraph2) \\
+Décembre 2026 & Utilité (gestes dans le temps, visage), attaquant de démarche entraîné sur MEVID ; rédaction finale (échéance de travail fin décembre, rendu en janvier) \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -2583,7 +2630,7 @@ Dépendances fragiles (modèle à accès restreint, code de recherche ancien) & 
 \label{chap:futur}
 % =============================================================================
 
-La priorité est la seconde phase : mesurer l'utilité des vidéos avec avatars, tester un attaquant de démarche entraîné,
+La priorité est la seconde phase : mesurer l'utilité des vidéos avec avatars, entraîner un attaquant de démarche sur des vidéos de surveillance,
 stabiliser les maillages (morphologie par personne, lissage dans chaque plan) et fusionner les pistes d'une même personne. Les pistes
 ci-dessous, issues de la première phase, restent valables mais passent après.
 
@@ -2703,8 +2750,9 @@ l'apparence d'une personne en conservant son comportement (section~\ref{sec:usec
 La seconde phase a commencé à le montrer. Les paramètres du modèle du corps suffisent à reproduire le talk-show avec un avatar par
 personne, à plusieurs niveaux d'apparence, avec le son et les sous-titres ; les images clés divisent le coût par neuf. Sur les
 vidéos de surveillance de MEVID, la chaîne tient dès 64~px de haut avec un filtre, et une première mesure montre que la morphologie
-identifie un peu, alors qu'un mouvement décrit simplement n'identifie pas. Il reste l'essentiel pour le cas d'utilisation : mesurer
-que le comportement reste observable, et tester un attaquant de démarche entraîné. Comme l'a rappelé la réunion du 10 novembre, le
+identifie un peu, alors que le mouvement, décrit simplement ou lu par un modèle de démarche publié, n'identifie pas d'une caméra à
+l'autre ; les avatars gardent pourtant l'essentiel de ce mouvement. Il reste l'essentiel pour le cas d'utilisation : mesurer
+que le comportement reste observable, et entraîner un attaquant de démarche sur des vidéos de surveillance. Comme l'a rappelé la réunion du 10 novembre, le
 résultat attendu n'est pas une anonymisation, mais un compromis chiffré entre ce qu'on garde du comportement et ce qui reste de
 l'identité.
 
