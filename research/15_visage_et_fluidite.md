@@ -149,7 +149,19 @@ La précision 2D reste celle du brut (les poignets aussi : les gestes ne sont pa
 
 **60 images/s** : `run_tracks.py --offset 1` calcule les images impaires, `apply_people.py` les donne aux mêmes
 personnes (vérifié : il refait `sam3d_people` à l'identique sur les images paires) ; le rendu interpole entre deux
-images calculées au lieu de garder la pose (`--hold` pour l'ancien comportement).
+images calculées au lieu de garder la pose (`--hold` pour l'ancien comportement). Les 9351 images impaires ont pris
+2 h 11 (0,84 s par image).
+
+| Mesure (60 images/s, 2 personnes) | Brut | lock+sg13 | **Robuste** |
+|---|---|---|---|
+| Pics par minute (squelette / profondeur) | 386 / 118 | 0,6 / 1,2 | **0 / 0** |
+| Accélération p95 position du corps / jambes / poignets / doigts (mm) | 56 / 76 / 62 / 49 | | **1,5 / 0,4 / 1,8 / 1,1** |
+| OKS / PCK@0,05 / PCK poignets | 0,830 / 0,770 / 0,920 | 0,824 / 0,776 / 0,922 | 0,816 / 0,769 / **0,922** |
+
+À 60 images/s, une image fausse sur deux voisines justes est plus facile à repérer, et le brut a plus de pics par
+minute (le même saut compte deux fois). Limite vue à l'œil : sur un geste très rapide des mains (image 8965), les
+poignets lissés traînent jusqu'à environ 100 px derrière le brut pendant quelques images, puis le rejoignent
+(médiane 22 px sur la seconde autour).
 
 ## 9. Visage : fait le 2026-11-20 (branche `feature/face-expression`)
 
