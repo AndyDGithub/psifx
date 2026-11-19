@@ -98,3 +98,19 @@ résultat ne suffit pas.
 - PromptHMR (CVPR 2025) : https://openaccess.thecvf.com/content/CVPR2025/papers/Wang_PromptHMR_Promptable_Human_Mesh_Recovery_CVPR_2025_paper.pdf
 - SmoothNet (ECCV 2022) : https://arxiv.org/abs/2112.13715
 - Carte du modèle MediaPipe Blendshape V2 : https://dcmpx.remotevs.com/com/googleapis/storage/SL/mediapipe-assets/Model%20Card%20Blendshape%20V2.pdf
+
+## 7. Sous-titres et nombre de personnes : fait le 2026-11-19 (branche `fix/speaker-link`)
+
+Vérité terrain : `example/data/ExtraitTalkShow_Sous-titre.txt` (DCL, MC, EAC, DLC = 4 voix), jugée telle qu'écrite
+(`subtitle_eval.py --expected person_0=DCL person_1=MC "off_*=DLC,EAC"`).
+
+| Chaîne | Mots au bon locuteur | David | Voix comptées |
+|---|---|---|---|
+| Avant (lèvres MediaPipe, diarisation automatique) | 48,1 % | 1,6 % | 3 |
+| Locuteur actif Light-ASD sur les personnes regroupées | 88,7 % | 94,9 % | 3 |
+| **Diarisation volontairement trop découpée (6) + visages + empreintes de voix** | **92,8 %** | 93,3 % | **4 (juste)** |
+
+- Le nombre de personnes n'est plus donné : 6 n'est qu'une borne haute ; les morceaux d'une même voix se
+  ressemblent à 0,91-0,93, les voix différentes à 0,03-0,33, et le résultat ne bouge pas entre les seuils 0,4 et 0,6.
+- Reste : les 6 mots de la voix derrière la caméra sont collés par Whisper à une ligne de l'explicateur ;
+  à valider sur une deuxième vidéo.
