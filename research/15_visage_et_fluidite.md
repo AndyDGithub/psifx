@@ -73,6 +73,19 @@ résultat ne suffit pas.
 - Quelle taille minimale de visage viser ? Sur les plans larges, aucune méthode ne lira l'expression.
 - Les expressions portent un peu d'identité (dynamique propre à chacun) : à mesurer comme la démarche.
 
+## 6. Sous-titres : la voix de l'animateur marquée « off »
+
+- **Cause** : la diarisation a été lancée sans nombre de locuteurs. pyannote a trouvé 3 voix pour 2 personnes :
+  l'animateur coupé en SPEAKER_02 (131 s) et SPEAKER_00 (17 s). L'association par les lèvres donne une personne par
+  voix : le petit morceau (score 1,52) a pris l'animateur, et le gros morceau, au score négatif (-0,27, sa bouche
+  n'est visible que 39 % du temps où il parle, la caméra montre souvent l'invitée), est parti en « hors champ ».
+- **Correctif vérifié** (en scratch) : diarisation avec `--num_speakers 2` → 2 voix (136 s et 145 s), l'ancien
+  SPEAKER_00 rejoint l'animateur ; l'association donne animateur → personne 0 (0,77), invitée → personne 1 (0,59),
+  plus aucune réplique « off ».
+- **À faire** : donner à la diarisation le nombre de personnes trouvé par le regroupement (`people.json`), relier les
+  voix aux **personnes regroupées** (et non aux pistes SAM3 brutes) pour que la couleur du sous-titre soit celle de
+  l'avatar, puis régénérer `subtitles.ass` et les vidéos.
+
 ## Sources
 
 - SAM 3D Body, code (`mhr_head.py`) : https://github.com/facebookresearch/sam-3d-body
