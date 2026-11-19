@@ -24,7 +24,10 @@ from tqdm import tqdm
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "e2e"))
 from render import PALETTE  # noqa: E402
 
-DEPTH_SLICES, SHADES = 48, 6  # Painter's algorithm by depth slice, triangles grouped by shade level.
+DEPTH_SLICES, SHADES = 48, 32  # Painter's algorithm by depth slice, triangles grouped by shade level.
+# Light from the upper left, slightly in front (camera axes, y down): the face's relief (lips, nose, eyelids) shows,
+# where the old 6 levels lit by the view direction flattened it. 32 levels cost about 7 ms more per mesh.
+LIGHT = np.array([-0.35, -0.45, -0.82]) / np.linalg.norm([-0.35, -0.45, -0.82])
 
 
 def project(points: np.ndarray, focal: float, width: int, height: int) -> np.ndarray:
@@ -33,23 +36,23 @@ def project(points: np.ndarray, focal: float, width: int, height: int) -> np.nda
 
 
 def draw_mesh(img: np.ndarray, vertices: np.ndarray, faces: np.ndarray, focal: float, color) -> None:
-    """Fills the mesh triangles far to near, darker as they turn away from the camera."""
+    """Fills the mesh triangles far to near, lit by LIGHT (both sides of a triangle lit the same)."""
     h, w = img.shape[:2]
     uv = project(vertices, focal, w, h)
     tri = vertices[faces]  # (F, 3, 3), camera frame
     normals = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
     normals /= np.linalg.norm(normals, axis=1, keepdims=True) + 1e-9
-    shade = np.abs(normals[:, 2])  # Facing the camera: 1, seen edge-on: 0.
+    shade = np.abs(normals @ LIGHT)  # Facing the light: 1, edge-on: 0.
     level = np.minimum((shade * SHADES).astype(int), SHADES - 1)
     depth = tri[:, :, 2].mean(axis=1)
     order = np.argsort(-depth)
     polygons = uv[faces].astype(np.int32)
     base = np.asarray(color, dtype=np.float32)
     for chunk in np.array_split(order, DEPTH_SLICES):
-        for k in range(SHADES):
+        for k in np.unique(level[chunk]):
             sel = chunk[level[chunk] == k]
             if len(sel):
-                c = base * (0.35 + 0.65 * (k + 0.5) / SHADES)
+                c = base * (0.25 + 0.75 * (k + 0.5) / SHADES)
                 cv2.fillPoly(img, list(polygons[sel]), tuple(int(v) for v in c), lineType=cv2.LINE_AA)
 
 
