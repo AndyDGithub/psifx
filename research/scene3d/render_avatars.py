@@ -9,7 +9,8 @@ A2 = plate + own, A3 = plate + neutral, A4 = grey + neutral.
 
 The mesh is rebuilt by MHR from ``shape_params``, ``mhr_model_params`` (136 pose then 68 scale values) and
 ``expr_params``, placed with ``cam_t`` and projected with the archive focal, then drawn by ``render_video.draw_mesh``.
-A person keeps one color; a mesh stays on screen until the next computed frame.
+A person keeps one color. Between two computed frames of the same shot, the parameters are interpolated
+(``--hold`` keeps the old behaviour: the mesh stays until the next computed frame, steps at the computed rate).
 
 A plate is trusted only if its camera comes back (``--min_plate_shots``) and its shots share enough decor keypoints
 (``--min_plate_inliers``): a single shot does not separate the decor from a zoom transition, and an inserted video
@@ -85,6 +86,9 @@ def main():
     parser.add_argument("--min_plate_inliers", type=int, default=100)
     parser.add_argument("--cut", type=float, default=18, help="shot cut threshold, as in run_keyframes.py")
     parser.add_argument("--still", type=int, nargs="*", help="only write these frames, original | render, as jpg")
+    parser.add_argument("--range", type=int, nargs=2, metavar=("FIRST", "LAST"),
+                        help="only render these frames (a clip to check), side by side with the original")
+    parser.add_argument("--hold", action="store_true", help="hold each computed frame instead of interpolating")
     parser.add_argument("--output", type=Path, help="default: <pipeline>/avatars_<background>_<body>.mp4")
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args()
@@ -128,23 +132,37 @@ def main():
                                           args.min_plate_shots, args.min_plate_inliers)
         print(f"{matched} of {labels[-1] + 1} shots have a plate; the others are grey", flush=True)
     # Row of each person's archive to draw on each frame (-1: none), held until its next computed frame, never
-    # across a cut.
-    rows = {}
+    # across a cut; weight of the next row for the interpolation (0 where the next row is too far or in another
+    # shot).
+    rows, weights = {}, {}
     for p, a in archives.items():
         r = np.full(n_frames, -1, np.int64)
+        w = np.zeros(n_frames)
         frames = a["frames"].astype(int)
         for j, f in enumerate(frames):
             end = frames[j + 1] if j + 1 < len(frames) else n_frames
             r[f:min(end, f + 8)] = j
+            if not args.hold and j + 1 < len(frames) and end - f <= 8 and labels[end] == labels[f]:
+                w[f:end] = (np.arange(f, end) - f) / (end - f)
         r[(r >= 0) & (labels != labels[frames[np.clip(r, 0, None)]])] = -1
-        rows[p] = r
+        rows[p], weights[p] = r, w
+
+    def at(a: dict, key: str, j: int, w: float) -> np.ndarray:
+        """Value of row j moved by w towards row j + 1: linear, the shortest way for the pose angles."""
+        x = a[key][j].astype(np.float64)
+        if w == 0:
+            return x
+        delta = a[key][j + 1] - x
+        if key == "mhr_model_params":
+            delta[3:POSE] = (delta[3:POSE] + np.pi) % (2 * np.pi) - np.pi
+        return x + w * delta
 
     @torch.inference_mode()
-    def vertices(a: dict, j: int) -> np.ndarray:
-        v = mhr(*(torch.from_numpy(a[k][j][None]).to(args.device).float()
+    def vertices(a: dict, j: int, w: float) -> np.ndarray:
+        v = mhr(*(torch.from_numpy(at(a, k, j, w)[None]).to(args.device).float()
                   for k in ("shape_params", "mhr_model_params", "expr_params")))[0][0].cpu().numpy() / 100
         v[:, [1, 2]] *= -1  # MHR axes to the camera axes of SAM 3D Body, as in mesh_eval.py.
-        return v + a["cam_t"][j]
+        return v + at(a, "cam_t", j, w)
 
     def render(i: int, frame: np.ndarray) -> np.ndarray:
         if args.background == "original":
@@ -158,7 +176,8 @@ def main():
         drawn = [(p, rows[p][i]) for p in archives if rows[p][i] >= 0]
         for p, j in sorted(drawn, key=lambda x: -archives[x[0]]["cam_t"][x[1]][2]):
             a = archives[p]
-            draw_mesh(canvas, vertices(a, j), a["faces"], float(a["focal"][j]), colors[p])
+            w = weights[p][i]
+            draw_mesh(canvas, vertices(a, j, w), a["faces"], float(at(a, "focal", j, w)), colors[p])
         if args.background == "original":  # Half transparent: the check of the fit.
             canvas = cv2.addWeighted(canvas, 0.65, image, 0.35, 0)
         return canvas
@@ -174,6 +193,27 @@ def main():
                 sys.exit(f"error: cannot read frame {i}")
             cv2.imwrite(str(folder / f"{name}_{i}.jpg"), np.hstack([frame, render(i, frame)]))
         print(f"wrote {len(args.still)} stills in {folder}")
+        return
+
+    if args.range:
+        first, last = max(0, args.range[0]), min(n_frames - 1, args.range[1])
+        out = args.output or d / f"{name}_{first}_{last}.mp4"
+        capture.set(cv2.CAP_PROP_POS_FRAMES, first)
+        writer = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s",
+                                   f"{width}x{height // 2}", "-r", str(Fraction(fps).limit_denominator(1001)), "-i",
+                                   "-", "-c:v", "libx264", "-crf", "20", "-pix_fmt", "yuv420p", str(out)],
+                                  stdin=subprocess.PIPE)
+        for i in range(first, last + 1):
+            ok, frame = capture.read()
+            if not ok:
+                break
+            pair = np.hstack([frame, render(i, frame)])
+            writer.stdin.write(cv2.resize(pair, (width, height // 2)).tobytes())
+        writer.stdin.close()
+        if writer.wait() != 0:
+            sys.exit("error: ffmpeg could not write the clip")
+        print(f"wrote {out}")
+        print("RENDER_OK")
         return
 
     out = args.output or d / f"{name}.mp4"
