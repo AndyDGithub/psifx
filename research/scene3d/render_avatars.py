@@ -87,7 +87,8 @@ def main():
     parser.add_argument("--cut", type=float, default=18, help="shot cut threshold, as in run_keyframes.py")
     parser.add_argument("--still", type=int, nargs="*", help="only write these frames, original | render, as jpg")
     parser.add_argument("--range", type=int, nargs=2, metavar=("FIRST", "LAST"),
-                        help="only render these frames (a clip to check), side by side with the original")
+                        help="only render these frames (a clip to check), without sound or subtitles")
+    parser.add_argument("--side_by_side", action="store_true", help="with --range: original | render, half size")
     parser.add_argument("--hold", action="store_true", help="hold each computed frame instead of interpolating")
     parser.add_argument("--output", type=Path, help="default: <pipeline>/avatars_<background>_<body>.mp4")
     parser.add_argument("--device", default="cuda")
@@ -199,16 +200,19 @@ def main():
         first, last = max(0, args.range[0]), min(n_frames - 1, args.range[1])
         out = args.output or d / f"{name}_{first}_{last}.mp4"
         capture.set(cv2.CAP_PROP_POS_FRAMES, first)
+        size = (width, height // 2) if args.side_by_side else (width, height)
         writer = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s",
-                                   f"{width}x{height // 2}", "-r", str(Fraction(fps).limit_denominator(1001)), "-i",
+                                   f"{size[0]}x{size[1]}", "-r", str(Fraction(fps).limit_denominator(1001)), "-i",
                                    "-", "-c:v", "libx264", "-crf", "20", "-pix_fmt", "yuv420p", str(out)],
                                   stdin=subprocess.PIPE)
         for i in range(first, last + 1):
             ok, frame = capture.read()
             if not ok:
                 break
-            pair = np.hstack([frame, render(i, frame)])
-            writer.stdin.write(cv2.resize(pair, (width, height // 2)).tobytes())
+            image = render(i, frame)
+            if args.side_by_side:
+                image = cv2.resize(np.hstack([frame, image]), size)
+            writer.stdin.write(image.tobytes())
         writer.stdin.close()
         if writer.wait() != 0:
             sys.exit("error: ffmpeg could not write the clip")
