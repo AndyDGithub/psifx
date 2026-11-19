@@ -73,6 +73,8 @@ def main():
     parser.add_argument("--repo", type=Path, required=True, help="clone of facebookresearch/sam-3d-body")
     parser.add_argument("--checkpoint", type=Path, required=True, help="folder with model.ckpt and assets/")
     parser.add_argument("--stride", type=int, default=1, help="process one frame out of N")
+    parser.add_argument("--offset", type=int, default=0, help="first frame processed (0 <= offset < stride): "
+                                                              "offset 1 with stride 2 completes a stride 2 run")
     parser.add_argument("--inference_type", default="full", choices=["full", "body"],
                         help="full adds the hand decoder (slower)")
     parser.add_argument("--min_area", type=int, default=400, help="smallest mask, in pixels, worth a mesh")
@@ -89,6 +91,8 @@ def main():
                  args.repo / "sam_3d_body"):
         if not path.exists():
             sys.exit(f"error: missing {path}")
+    if not 0 <= args.offset < args.stride:
+        sys.exit(f"error: --offset {args.offset} must be in [0, --stride)")
     people = sorted((p.stem for p in mask_dir.glob("*.mp4")), key=int)
     if not people:
         sys.exit(f"error: no mask in {mask_dir}")
@@ -107,7 +111,7 @@ def main():
     start, calls = time.time(), 0
     try:
         for i, (frame, *masks) in enumerate(tqdm(zip(*readers), total=n_frames, desc="SAM 3D Body")):
-            if i % args.stride:
+            if i % args.stride != args.offset:
                 continue
             boxes, prompts, who = [], [], []
             for person, mask in zip(people, masks):

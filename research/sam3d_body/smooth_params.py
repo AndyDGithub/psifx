@@ -38,6 +38,7 @@ from scipy.signal import savgol_filter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mesh_eval  # noqa: E402,F401  (puts research/pose_annotation on the path)
+import robust_smooth  # noqa: E402
 from evaluate import evaluate, load_ground_truth  # noqa: E402
 from run_keyframes import cut_labels, split_segments  # noqa: E402
 from run_tracks import MHR70_TO_COCO17  # noqa: E402
@@ -46,6 +47,7 @@ POSE, FIRST_ANGLE = 136, 3  # mhr_model_params: 3 translations, 133 angles, then
 LEFT_HIP, RIGHT_HIP = 11, 12  # COCO indices.
 WRISTS = [9, 10]
 NEIGHBORS = 16
+SPIKE_MM = 40.0
 
 
 def one_euro(x: np.ndarray, rate: float, min_cutoff: float, beta: float, d_cutoff: float = 1.0) -> np.ndarray:
@@ -140,12 +142,21 @@ def annotation_scores(archives: dict, folder: Path) -> dict:
             "wrists_pck": round((per_keypoint["left_wrist"] + per_keypoint["right_wrist"]) / 2, 3)}
 
 
-def measures(k3: np.ndarray, raw: np.ndarray, fast: np.ndarray) -> dict:
+def measures(k3: np.ndarray, raw: np.ndarray, fast: np.ndarray, depth: np.ndarray, runs: list[np.ndarray]) -> dict:
+    """Jitter, change to the raw keypoints, and spikes (a joint or the depth away from the mean of its two
+    neighbours by more than SPIKE_MM, inside a run: a "teleport")."""
     relative = k3 - k3[:, [LEFT_HIP, RIGHT_HIP]].mean(1, keepdims=True)
     raw_relative = raw - raw[:, [LEFT_HIP, RIGHT_HIP]].mean(1, keepdims=True)
     accel = np.linalg.norm(relative[2:] - 2 * relative[1:-1] + relative[:-2], axis=2).mean(1) * 1000
     change = np.linalg.norm(relative - raw_relative, axis=2) * 1000
-    return {"jitter": accel, "change": change.ravel(), "gestures": change[fast][:, WRISTS].ravel()}
+    spikes, depth_spikes = 0, 0
+    for rows in runs:
+        if len(rows) >= 3:
+            r, d = relative[rows], depth[rows]
+            spikes += int((np.linalg.norm(r[2:] - 2 * r[1:-1] + r[:-2], axis=2).max(1) / 2 * 1000 > SPIKE_MM).sum())
+            depth_spikes += int((np.abs(d[2:] - 2 * d[1:-1] + d[:-2]) / 2 * 1000 > SPIKE_MM).sum())
+    return {"jitter": accel, "change": change.ravel(), "gestures": change[fast][:, WRISTS].ravel(),
+            "spikes": np.array([spikes]), "depth_spikes": np.array([depth_spikes])}
 
 
 def main():
@@ -156,7 +167,10 @@ def main():
     parser.add_argument("--annotations", type=Path, help="folder with frames.csv and ground_truth.json")
     parser.add_argument("--variants", nargs="+", default=["lock", "lock+sg7", "lock+sg15",
                                                           "lock+euro:1.0:0.05", "lock+euro:0.5:0.02"])
-    parser.add_argument("--keep", help="variant to write as archives, in <pipeline>/sam3d_smooth")
+    parser.add_argument("--keep", help="variant to write as archives, in <pipeline>/<keep_dir>")
+    parser.add_argument("--keep_dir", default="sam3d_smooth")
+    parser.add_argument("--people", type=Path, help="people.json (merge_people.py): needed by the robust variants "
+                                                    "to know each sample's SAM3 mask (hidden parts)")
     parser.add_argument("--grid", type=int, default=2, help="frame step of the archives")
     parser.add_argument("--cut", type=float, default=18)
     parser.add_argument("--device", default="cuda")
@@ -182,14 +196,29 @@ def main():
     rate = fps / args.grid  # Samples per second in the archives.
     rng = np.random.default_rng(0)
 
-    pooled: dict[str, dict[str, list]] = {v: {"jitter": [], "change": [], "gestures": []} for v in ["raw"] + args.variants}
+    pooled: dict[str, dict[str, list]] = {v: {"jitter": [], "change": [], "gestures": [], "spikes": [],
+                                              "depth_spikes": []} for v in ["raw"] + args.variants}
+    robust_variants = [v for v in args.variants if v.startswith("robust")]
+    hidden, parts = {}, None
+    if robust_variants:
+        parts = robust_smooth.parameter_parts(mhr, args.device)
+        if any("novis" not in v for v in robust_variants):
+            if not args.people or not args.people.is_file():
+                sys.exit("error: the robust variants need --people (or use robust-novis)")
+            hidden = robust_smooth.visibility(args.pipeline, json.loads(args.people.read_text()), archives)
+            report_hidden = {p: {k: round(float(v.mean()), 3) for k, v in h.items()} for p, h in hidden.items()}
+            print("hidden share per part:", report_hidden, flush=True)
     projected: dict[str, dict] = {v: {} for v in ["raw"] + args.variants}
-    report: dict = {"fit_error_mm_p50": {}, "rate_hz": rate}
+    report: dict = {"fit_error_mm_p50": {}, "rate_hz": rate, "robust_stats": {}}
+    seconds = 0.0
     for person, a in archives.items():
         frames = a["frames"].astype(int)
         if frames.max() >= len(labels):
             sys.exit(f"error: person {person} has frame {frames.max()}, the video has {len(labels)}")
         segments = split_segments(frames, args.grid, labels)
+        position = {int(f): i for i, f in enumerate(frames)}
+        runs = [np.array([position[int(f)] for f in s]) for s in segments]
+        seconds += len(frames) / rate
         raw_vertices = meshes(a, mhr, args.device)
         target = a["keypoints_3d"][:, MHR70_TO_COCO17]
         nearest, weights, error = fit_regressor(raw_vertices, target, rng)
@@ -200,9 +229,18 @@ def main():
         fast = speed >= np.percentile(speed, 90)
         del raw_vertices
         for variant in ["raw"] + args.variants:
-            b = a if variant == "raw" else smooth(a, segments, variant, rate)
+            if variant.startswith("robust"):
+                # robust[-novis][:scale[:depth cut-off in Hz]]
+                fields = variant.split(":")
+                scale = float(fields[1]) if len(fields) > 1 else 1.0
+                depth_hz = float(fields[2]) if len(fields) > 2 else None
+                b, stats = robust_smooth.robust(a, segments, rate, parts,
+                                                None if "novis" in variant else hidden[person], scale, depth_hz)
+                report["robust_stats"][f"{person} {variant}"] = stats
+            else:
+                b = a if variant == "raw" else smooth(a, segments, variant, rate)
             k3 = raw if variant == "raw" else apply_regressor(meshes(b, mhr, args.device), nearest, weights)
-            for key, value in measures(k3, raw, fast).items():
+            for key, value in measures(k3, raw, fast, b["cam_t"][:, 2], runs).items():
                 pooled[variant][key].append(value)
             camera = k3 + b["cam_t"][:, None]
             focal = b["focal"][:, None]
@@ -212,7 +250,7 @@ def main():
             two_d[:, MHR70_TO_COCO17, 1] = focal * camera[..., 1] / z + 1080 / 2
             projected[variant][person] = {"frames": a["frames"], "keypoints_2d": two_d}
             if variant == args.keep:
-                out = args.pipeline / "sam3d_smooth"
+                out = args.pipeline / args.keep_dir
                 out.mkdir(exist_ok=True)
                 np.savez_compressed(out / f"{person}.npz", **b)
         print(person, "done", flush=True)
@@ -221,7 +259,9 @@ def main():
         jitter, change, gestures = (np.concatenate(values[k]) for k in ("jitter", "change", "gestures"))
         entry = {"jitter_mm_p50": round(float(np.median(jitter)), 1),
                  "change_mm_p50_p95": [round(float(v), 1) for v in np.percentile(change, [50, 95])],
-                 "gestures_change_mm_p50_p95": [round(float(v), 1) for v in np.percentile(gestures, [50, 95])]}
+                 "gestures_change_mm_p50_p95": [round(float(v), 1) for v in np.percentile(gestures, [50, 95])],
+                 "spikes_per_min": round(float(np.sum(values["spikes"])) / (seconds / 60), 1),
+                 "depth_spikes_per_min": round(float(np.sum(values["depth_spikes"])) / (seconds / 60), 1)}
         if args.annotations:
             entry.update(annotation_scores(projected[variant], args.annotations))
         report[variant] = entry
