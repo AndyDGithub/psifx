@@ -81,6 +81,55 @@ def scores(ranks: list[tuple[int, float, int]], resamples: int, rng) -> dict:
     return result
 
 
+def evaluate(x: np.ndarray, rows: list[dict], is_query: np.ndarray, resamples: int, rng) -> dict:
+    """MEVID protocol on one feature per tracklet (cosine distance): Rank-1, Rank-5, mAP per setting and height."""
+    person = np.array([t["person"] for t in rows])
+    outfit = np.array([t["outfit"] for t in rows])
+    camera = np.array([t["camera"] for t in rows])
+    height = np.array([t["first_height"] for t in rows])
+    x = x / (np.linalg.norm(x, axis=1, keepdims=True) + 1e-9)
+    gallery = np.where(~is_query)[0]
+    ranks = {s: [] for s in ("general", "same_outfit", "other_outfit")}
+    for q in np.where(is_query)[0]:
+        distance = 1 - x[gallery] @ x[q]
+        same_person = person[gallery] == person[q]
+        base = ~(same_person & (camera[gallery] == camera[q]))
+        settings = {"general": base,
+                    "same_outfit": base & ~(same_person & (outfit[gallery] != outfit[q])),
+                    "other_outfit": base & ~(same_person & (outfit[gallery] == outfit[q]))}
+        for s, allowed in settings.items():
+            result = rank(distance, same_person, allowed)
+            if result:
+                ranks[s].append((*result, person[q], height[q]))
+    entry = {}
+    for s, values in ranks.items():
+        entry[s] = scores([v[:3] for v in values], resamples, rng)
+        entry[s]["by_height"] = {f"{lo}-{hi}": scores([v[:3] for v in values if lo <= v[3] < hi], resamples,
+                                                      rng)["rank1"] for lo, hi in HEIGHTS
+                                 if any(lo <= v[3] < hi for v in values)}
+    return entry
+
+
+def chance(rows: list[dict], is_query: np.ndarray) -> dict:
+    """Rank-1 of a random order, the same queries and allowed galleries."""
+    person = np.array([t["person"] for t in rows])
+    outfit = np.array([t["outfit"] for t in rows])
+    camera = np.array([t["camera"] for t in rows])
+    gallery = np.where(~is_query)[0]
+    result = {}
+    for s in ("general", "other_outfit"):
+        hits = []
+        for q in np.where(is_query)[0]:
+            same_person = person[gallery] == person[q]
+            allowed = ~(same_person & (camera[gallery] == camera[q]))
+            if s == "other_outfit":
+                allowed &= ~(same_person & (outfit[gallery] == outfit[q]))
+            if same_person[allowed].any():
+                hits.append(same_person[allowed].mean())
+        result[s] = round(100 * float(np.mean(hits)), 1)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("folder", type=Path, help="folder with sample.json and tracks/")
@@ -109,57 +158,21 @@ def main():
         rows.append(t)
         for name, value in features(a, kept).items():
             feats.setdefault(name, []).append(value)
-    person = np.array([t["person"] for t in rows])
-    outfit = np.array([t["outfit"] for t in rows])
-    camera = np.array([t["camera"] for t in rows])
-    height = np.array([t["first_height"] for t in rows])
     is_query = np.array([t["track"] in queries for t in rows])
-    print(f"{len(rows)} tracklets kept, {is_query.sum()} queries, {len(set(person))} people", flush=True)
+    print(f"{len(rows)} tracklets kept, {is_query.sum()} queries, {len({t['person'] for t in rows})} people", flush=True)
 
     rng = np.random.default_rng(0)
     report = {"tracklets": len(rows), "queries": int(is_query.sum()), "filter": vars(args) | {"folder": None,
                                                                                             "annotations": None},
               "attackers": {}}
-    gallery = np.where(~is_query)[0]
     for name, matrix in feats.items():
         x = np.stack(matrix)
         x = (x - x.mean(0)) / (x.std(0) + 1e-9)  # Standardized over the tracklets: no unit dominates.
-        x /= np.linalg.norm(x, axis=1, keepdims=True) + 1e-9
-        ranks = {s: [] for s in ("general", "same_outfit", "other_outfit")}
-        for q in np.where(is_query)[0]:
-            distance = 1 - x[gallery] @ x[q]
-            same_person = person[gallery] == person[q]
-            base = ~(same_person & (camera[gallery] == camera[q]))
-            settings = {"general": base,
-                        "same_outfit": base & ~(same_person & (outfit[gallery] != outfit[q])),
-                        "other_outfit": base & ~(same_person & (outfit[gallery] == outfit[q]))}
-            for s, allowed in settings.items():
-                result = rank(distance, same_person, allowed)
-                if result:
-                    ranks[s].append((*result, person[q], height[q]))
-        entry = {}
-        for s, values in ranks.items():
-            entry[s] = scores([v[:3] for v in values], args.resamples, rng)
-            entry[s]["by_height"] = {f"{lo}-{hi}": scores([v[:3] for v in values if lo <= v[3] < hi], args.resamples,
-                                                          rng)["rank1"] for lo, hi in HEIGHTS
-                                     if any(lo <= v[3] < hi for v in values)}
+        entry = evaluate(x, rows, is_query, args.resamples, rng)
         report["attackers"][name] = entry
         print(name, json.dumps({s: (e["rank1"], e["map"]) for s, e in entry.items()}), flush=True)
-
-    # Chance: Rank-1 of a random order, the same queries and allowed galleries.
-    chance = {}
-    for s in ("general", "other_outfit"):
-        hits = []
-        for q in np.where(is_query)[0]:
-            same_person = person[gallery] == person[q]
-            allowed = ~(same_person & (camera[gallery] == camera[q]))
-            if s == "other_outfit":
-                allowed &= ~(same_person & (outfit[gallery] == outfit[q]))
-            if same_person[allowed].any():
-                hits.append(same_person[allowed].mean())
-        chance[s] = round(100 * float(np.mean(hits)), 1)
-    report["chance_rank1"] = chance
-    print("chance", chance)
+    report["chance_rank1"] = chance(rows, is_query)
+    print("chance", report["chance_rank1"])
     (args.folder / "attack_params.json").write_text(json.dumps(report, indent=1))
     print("ATTACK_OK")
 
