@@ -172,8 +172,10 @@ def write_ass(path: Path, segments, colors, width: int, height: int):
              "Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, BorderStyle, "
              "Outline, Shadow, Alignment, MarginL, MarginR, MarginV"]
     for name, color in styles.items():
-        lines.append(f"Style: {name},DejaVu Sans,{max(18, height // 22)},{ass_color(color)},&H00000000,&H80000000,"
-                     f"1,1,2,1,2,20,20,30")
+        # Opaque box (BorderStyle 3: the outline colour fills a box), black at 70 %: text in the person's color stays
+        # readable over an avatar of the same color.
+        lines.append(f"Style: {name},DejaVu Sans,{max(18, height // 22)},{ass_color(color)},&H4D000000,&H00000000,"
+                     f"1,3,8,0,2,20,20,30")
     lines += ["", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
     for seg in segments:
         label = speaker_label(seg["speaker"])
