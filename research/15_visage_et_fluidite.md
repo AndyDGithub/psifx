@@ -114,3 +114,91 @@ Vérité terrain : `example/data/ExtraitTalkShow_Sous-titre.txt` (DCL, MC, EAC, 
   ressemblent à 0,91-0,93, les voix différentes à 0,03-0,33, et le résultat ne bouge pas entre les seuils 0,4 et 0,6.
 - Reste : les 6 mots de la voix derrière la caméra sont collés par Whisper à une ligne de l'explicateur ;
   à valider sur une deuxième vidéo.
+
+## 8. Fidélité du mouvement : fait le 2026-11-19/20 (branche `optim/motion-fidelity`)
+
+**Diagnostic par partie du corps** (`motion_diag.py` : articulations MHR en repère caméra, accélération et « pics »
+= une articulation à plus de 40 mm de la moyenne de ses deux voisines, donc une téléportation d'une image) :
+
+- les plus gros pics sont des erreurs de **profondeur** (jusqu'à 1,7 m sur une image : l'avatar rétrécit puis revient) ;
+- le lissage Savitzky-Golay **étale** une valeur fausse sur ses voisines au lieu de la retirer ;
+- les **jambes** ne sont jamais vues en entier (chevilles hors image sur 100 % des images, genoux 2 %, sous la table
+  sur les plans larges) : le modèle les invente, d'où 172 pics par minute sur les jambes brutes.
+
+**Correctif `robust_smooth.py`** (variante `robust` de `smooth_params.py`) :
+
+1. **Valeurs aberrantes retirées** (filtre de Hampel : écart à la médiane d'une fenêtre courte, en unités de l'écart
+   habituel de la chaîne, avec un seuil physique minimal pour ne pas toucher aux gestes) ;
+2. **Parties cachées moins crues** : une partie (jambes, bras, poignets, doigts, par côté) est cachée si ses points
+   2D sont hors image ou hors du masque SAM3 de la personne (la table cache les jambes) ; sa mesure compte 100 fois
+   moins ;
+3. **Lisseur de Kalman avant-arrière** (Rauch-Tung-Striebel, vitesse constante), une fréquence de coupure par partie ;
+   la partie de chaque paramètre est trouvée sur MHR lui-même (première articulation qui bouge) ;
+4. **Profondeur à part** : la translation caméra est lissée comme position dans l'image (`x/z`, `y/z`) et log de la
+   profondeur, puis reconstruite : lisser la profondeur ne déplace plus l'avatar dans l'image.
+
+| Mesure (30 images/s, 2 personnes) | Brut | Lissage actuel (lock+sg7) | **Robuste** |
+|---|---|---|---|
+| Pics par minute (squelette / profondeur) | 286 / 88 | 7,5 / 14,4 | **0 / 0** |
+| Accélération p95 position du corps (mm) | 83,7 | 34,5 | **5,9** |
+| … jambes / poignets / doigts (mm) | 90 / 71 / 60 | 24,5 / 19,2 / 15,8 | **1,8 / 7,4 / 4,4** |
+| OKS / PCK@0,05 / PCK poignets (annotations) | 0,830 / 0,769 / 0,918 | 0,823 / 0,775 / 0,917 | 0,816 / 0,770 / **0,918** |
+
+La précision 2D reste celle du brut (les poignets aussi : les gestes ne sont pas aplatis). Une profondeur coupée à
+0,4 Hz faisait tomber l'OKS à 0,75 (la taille de l'avatar ne collait plus à l'image) : 2 Hz est gardé.
+
+**60 images/s** : `run_tracks.py --offset 1` calcule les images impaires, `apply_people.py` les donne aux mêmes
+personnes (vérifié : il refait `sam3d_people` à l'identique sur les images paires) ; le rendu interpole entre deux
+images calculées au lieu de garder la pose (`--hold` pour l'ancien comportement).
+
+## 9. Visage : fait le 2026-11-20 (branche `feature/face-expression`)
+
+- **Noms des 72 expressions MHR** : `docs/face-expressions.md` du dépôt MHR (`jawDrop`, `lipCornerPuller_L`,
+  `eyesClosed_R`...). La conversion depuis les 52 blendshapes ARKit de MediaPipe est donc une **table nom à nom**
+  (`ARKIT_TO_MHR`), pas un modèle appris.
+- **Lecture** (`face_blendshapes.py`) : MediaPipe Face Landmarker sur un carré autour de chaque visage (marge 2,4 :
+  avec 1,8 le détecteur manquait 50 % des visages de David). Visages placés par psifx (Holistic) ou, à défaut, par
+  la tête de SAM 3D Body : couverture de 35 → 43 % des images de David (souvent de dos ou flou au premier plan) et
+  48 → 73 % pour Marion.
+- **Conversion** (`face_expression.py`) : visage de repos retiré par personne (20e centile : les lunettes se lisent
+  comme un demi-clignement), lissage robuste (sans rejet sur les paupières : un clignement est un vrai pic),
+  **mâchoire pilotée par l'écart des lèvres** (`jawOpen` ne bouge presque pas chez ces deux personnes), expressions
+  bornées à [0, 1].
+- **Rendu** : 32 niveaux d'ombre et une lumière de côté (au lieu de 6 niveaux face caméra) : le relief des lèvres se
+  voit, pour 7 ms de plus par maillage.
+- **Mesure de relecture** (MediaPipe relu sur le visage de l'avatar, corrélation avec l'original, extrait de 33 s) :
+
+  | Blendshape | Sans expressions | Avec |
+  |---|---|---|
+  | Sourire (gauche) | 0,16 | **0,74** |
+  | Moue | 0,31 | 0,61 |
+  | Sourcils intérieurs | 0,03 | 0,42 |
+  | Moyenne pondérée | 0,22 | 0,33 |
+
+  Limites : les **clignements** ne passent pas (MHR n'a pas de globes oculaires), et la relecture sous-estime les
+  fortes valeurs (MediaPipe ne trouve plus le visage d'un avatar très expressif) : le gain de la mâchoire a été réglé
+  à l'œil (avec la relecture seule, l'avatar « criait »).
+
+## 10. Chaîne des voix en une commande et deuxième vidéo (branche `fix/speaker-link`)
+
+`speakers.py` enchaîne Light-ASD, diarisation à 6 voix, lien visage, empreintes de voix, `enhance` et sous-titres
+(`people.json` facultatif : sinon une personne par piste SAM3).
+
+| Vidéo | Vérité | Ancienne chaîne (lèvres) | **Nouvelle chaîne** | Voix comptées |
+|---|---|---|---|---|
+| Talk-show (60 i/s) | sous-titres faits main | 48,1 % des mots | **92,8 %** | 4 (juste) |
+| Exemple (1 personne vue, 1 voix hors champ) | micros séparés | — | **100 %** du temps de parole | 2 (juste) |
+| AVA (film doublé, 2 hommes) | AVA-ActiveSpeaker, visage par visage | 61,7 % | **87,8 %** | 3 (2 + 3,6 s hors champ) |
+
+V3 n'est pas une vidéo indépendante (même talk-show, autre découpage à 25 i/s) : 37/40 répliques de référence justes
+(2 répliques de l'animateur passées « hors champ »).
+
+Sous-titres : texte de la couleur de la personne sur un bandeau noir à 70 % (lisible sur un avatar de même couleur).
+
+Sources :
+- Facial expression mapping, MHR : https://github.com/facebookresearch/MHR/blob/main/docs/face-expressions.md
+- SAM-Body4D (lissage de Kalman des paramètres MHR, masques complétés pour l'occlusion) : https://arxiv.org/html/2512.08406v1
+- World-Coordinate Human Motion Retargeting via SAM 3D Body (optimisation par fenêtre) : https://arxiv.org/html/2512.21573
+- Lisseurs robustes aux valeurs aberrantes (Hampel, RTS) : https://apps.dtic.mil/sti/pdfs/ADA093543.pdf et https://arxiv.org/html/2410.20411v1
+- DanceHMR (mains en vidéo, code non publié) : https://arxiv.org/pdf/2605.18102
+- SAM 3D Body, points de contrôle DINOv3 / ViT-H : https://github.com/facebookresearch/sam-3d-body
