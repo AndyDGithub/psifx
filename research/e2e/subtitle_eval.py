@@ -106,12 +106,25 @@ def speakers_from_diarization(segments: list[dict], diarization: Path) -> list[d
     return out
 
 
-def attribution(ref_labels, hyp_labels, chunks) -> dict:
-    """Share of aligned words (same or substituted) whose speaker maps to the reference speaker."""
+def attribution(ref_labels, hyp_labels, chunks, expected: dict | None = None) -> dict:
+    """Share of aligned words (same or substituted) whose speaker maps to the reference speaker.
+
+    Without ``expected``, labels are matched to reference speakers one to one, at best. With it (label -> set of
+    reference codes, e.g. ``person_0 -> {DCL}``, ``offscreen -> {DLC, EAC}``), the labels are judged as written in
+    the subtitles: a voice given to the wrong person is an error even if no one else got that label.
+    """
     pairs = []
     for c in chunks:
         if c.type in ("equal", "substitute"):
             pairs += zip(ref_labels[c.ref_start_idx:c.ref_end_idx], hyp_labels[c.hyp_start_idx:c.hyp_end_idx])
+    if expected is not None:
+        refs = sorted({r for r, _ in pairs})
+        confusion = Counter((r, h) for r, h in pairs)
+        return {"accuracy": round(sum(r in expected.get(h, ()) for r, h in pairs) / len(pairs), 3) if pairs else None,
+                "aligned_words": len(pairs),
+                "per_speaker": {r: round(sum(r in expected.get(h, ()) for rr, h in pairs if rr == r)
+                                         / sum(rr == r for rr, _ in pairs), 3) for r in refs},
+                "confusion": {f"{r} -> {h}": n for (r, h), n in sorted(confusion.items())}}
     refs, hyps = sorted({r for r, _ in pairs}), sorted({h for _, h in pairs})
     counts = np.zeros((len(hyps), len(refs)))
     for r, h in pairs:
@@ -137,12 +150,18 @@ def main():
     parser.add_argument("--diarization", type=Path, nargs="*", default=[],
                         help="RTTM files, each one paired with every transcription for the speaker check")
     parser.add_argument("--end", type=float, default=None, help="end of the last block, in seconds (video length)")
+    parser.add_argument("--expected", nargs="*", default=None,
+                        help="label=CODE[,CODE] pairs, e.g. person_0=DCL person_1=MC offscreen=DLC,EAC: judge the "
+                             "subtitle labels as written instead of matching them at best")
     parser.add_argument("--top", type=int, default=15, help="most frequent substitutions to list")
     args = parser.parse_args()
 
     for path in [args.reference, *args.transcriptions, *args.diarization]:
         if not path.is_file():
             sys.exit(f"error: missing {path}")
+    expected = None
+    if args.expected is not None:
+        expected = {k: set(v.split(",")) for k, v in (e.split("=", 1) for e in args.expected)}
     names, reference = parse_reference(args.reference, args.end)
     ref_words, ref_labels = labeled_words(reference)
     ref_text = " ".join(ref_words)
@@ -168,7 +187,7 @@ def main():
         }
         chunks = output.alignments[0]
         if any(s["speaker"] for s in segments):
-            result["speakers_from_vtt"] = attribution(ref_labels, hyp_labels, chunks)
+            result["speakers_from_vtt"] = attribution(ref_labels, hyp_labels, chunks, expected)
         for diarization in args.diarization:
             _, labels = labeled_words(speakers_from_diarization(segments, diarization))
             result[f"speakers_{diarization.stem}"] = attribution(ref_labels, labels, chunks)
