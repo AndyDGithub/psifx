@@ -80,7 +80,10 @@ ARKIT_TO_MHR = {
     "noseSneerLeft": ["noseWrinkler_L"], "noseSneerRight": ["noseWrinkler_R"],
 }  # Not used: _neutral, mouthClose (lips together while the jaw opens), tongueOut (MHR has no tongue shape).
 REST_PERCENTILE = 20
-MOUTH_GAIN = 3.0  # jawDrop per unit of lip gap over mouth width (above the rest); calibrated by --reread.
+MOUTH_GAIN = 1.8  # jawDrop per unit of lip gap over mouth width (above the rest), set by eye: speech opens the lips
+# to about 0.3 of the mouth width, a jaw of about 0.55. The re-read (--reread) underrates the strong values, where
+# MediaPipe no longer finds the avatar's face.
+MAX_EXPRESSION, MAX_GAIN = 1.0, 2.0
 CUTOFF_HZ = {"eye": 8.0, "mouth": 6.0, "other": 4.0}
 HAMPEL_S, HAMPEL_FLOOR = 0.15, 0.25
 
@@ -159,7 +162,7 @@ def reread(pipeline: Path, original: str, avatar: str) -> None:
         report["blendshapes"][n] = {"corr": round(corr, 3), "slope": round(slope, 3), "std": round(float(p[:, 0].std()), 3)}
         if corr > 0.3 and slope > 0.05:
             for target in ARKIT_TO_MHR.get(n, ["jawDrop"] if n == "mouthGap" else []):
-                gains[target] = round(min(4.0, 1.0 / slope), 2)
+                gains[target] = round(min(MAX_GAIN, 1.0 / slope), 2)
     weights = {n: v["std"] for n, v in report["blendshapes"].items()}
     total = sum(weights.values())
     report["corr_weighted_by_std"] = round(sum(v["corr"] * weights[n] for n, v in report["blendshapes"].items()) / total, 3)
@@ -228,6 +231,8 @@ def main():
         if "mouthGap" in names:
             jaw = MHR_EXPRESSIONS.index("jawDrop")
             expressions[:, jaw] = smoothed[:, names.index("mouthGap")] * MOUTH_GAIN * gains.get("jawDrop", 1.0)
+        # MHR's expressions are made for [-1, 1]: beyond, the face turns into a grimace (a jaw of 2 is a scream).
+        expressions = np.clip(expressions, 0.0, MAX_EXPRESSION)
         index = {int(f): i for i, f in enumerate(frames)}
         rows = np.array([index.get(int(f), -1) for f in a["frames"]])
         a["expr_params"] = np.zeros((len(a["frames"]), len(MHR_EXPRESSIONS)), np.float32)
