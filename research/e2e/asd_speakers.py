@@ -109,23 +109,28 @@ def crop(image: np.ndarray, x: float, y: float, s: float) -> np.ndarray:
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("pipeline", type=Path, help="folder with input.mp4, audio.wav and poses_mp/")
-    parser.add_argument("--people", type=Path, required=True, help="people.json of merge_people.py")
+    parser.add_argument("--people", type=Path, help="people.json of merge_people.py (default: each SAM3 track with "
+                                                    "a face archive is one person, over the whole video)")
     parser.add_argument("--light_asd", type=Path, required=True, help="clone of github.com/Junhua-Liao/Light-ASD")
     parser.add_argument("--weights", default="weight/pretrain_AVA_CVPR.model", help="inside --light_asd")
     args = parser.parse_args()
 
     d = args.pipeline
     weights = args.light_asd / args.weights
-    for path in (d / "input.mp4", d / "audio.wav", d / "poses_mp", args.people, weights):
+    for path in (d / "input.mp4", d / "audio.wav", d / "poses_mp", *([args.people] if args.people else []), weights):
         if not path.exists():
             sys.exit(f"error: missing {path}")
     with video.VideoReader(path=d / "input.mp4") as reader:
         n_frames, fps = len(reader), float(Fraction(reader.frame_rate))
-    people = json.loads(args.people.read_text())
-
     decoder = PoseEstimationTool(device="cpu", verbose=False)
     boxes = {a.name.removesuffix(".tar.gz"): face_boxes(decoder.decode(a)[0], n_frames)
              for a in sorted((d / "poses_mp").glob("*.tar.gz"))}
+    if args.people:
+        people = json.loads(args.people.read_text())
+    else:  # One person per track, named by the track number (person_<track> in the link).
+        tracks = sorted(boxes, key=int)
+        people = {"people": max(int(t) for t in tracks) + 1,
+                  "assignment": [{"track": t, "person": int(t), "frames": [0, n_frames - 1]} for t in tracks]}
     runs = person_runs(boxes, people, n_frames, fps)
     plans = {(p, r): crop_plan(run) for p, rs in runs.items() for r, run in enumerate(rs)}
     print({p: f"{len(rs)} runs, {sum(len(x) for x in rs) / ASD_FPS:.0f} s" for p, rs in runs.items()}, flush=True)
