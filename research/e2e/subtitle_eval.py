@@ -31,6 +31,7 @@ import json
 import re
 import sys
 from collections import Counter
+from fnmatch import fnmatch
 from pathlib import Path
 
 import jiwer
@@ -118,6 +119,8 @@ def attribution(ref_labels, hyp_labels, chunks, expected: dict | None = None) ->
         if c.type in ("equal", "substitute"):
             pairs += zip(ref_labels[c.ref_start_idx:c.ref_end_idx], hyp_labels[c.hyp_start_idx:c.hyp_end_idx])
     if expected is not None:
+        # Keys may be patterns (off_* = any off-screen voice).
+        expected = {h: set().union(*[v for k, v in expected.items() if fnmatch(h, k)]) for _, h in pairs}
         refs = sorted({r for r, _ in pairs})
         confusion = Counter((r, h) for r, h in pairs)
         return {"accuracy": round(sum(r in expected.get(h, ()) for r, h in pairs) / len(pairs), 3) if pairs else None,
