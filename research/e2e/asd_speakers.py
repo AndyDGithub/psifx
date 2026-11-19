@@ -88,7 +88,7 @@ def crop_plan(run: list) -> list[tuple[int, int, float, float, float]]:
     s = np.interp(full, ks, np.maximum(b[:, 2] - b[:, 0], b[:, 3] - b[:, 1]) / 2)
     x = np.interp(full, ks, (b[:, 0] + b[:, 2]) / 2)
     y = np.interp(full, ks, (b[:, 1] + b[:, 3]) / 2)
-    kernel = 13 if len(full) >= 13 else (len(full) // 2) * 2 + 1
+    kernel = min(13, len(full) if len(full) % 2 else len(full) - 1)  # Odd and no longer than the run.
     s, x, y = (signal.medfilt(v, kernel_size=kernel) for v in (s, x, y))
     frames = {k: f for k, f, _ in run}
     fps_ratio = (run[-1][1] - run[0][1]) / max(1, run[-1][0] - run[0][0])

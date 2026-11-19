@@ -148,6 +148,8 @@ def main():
                         help="weight of the on-screen term (0 to use the lips only)")
     parser.add_argument("--people", type=Path, help="people.json of merge_people.py: link voices to merged people")
     parser.add_argument("--diarization", type=Path, help="default: <out_dir>/diarization.rttm")
+    parser.add_argument("--asd", type=Path, help="folder of asd_speakers.py scores (<person>.npy), used instead of "
+                                                 "the lip opening; the people are those of people.json")
     parser.add_argument("--output", type=Path, help="default: <out_dir>/identification_lips.json")
     args = parser.parse_args()
     d = args.out_dir
@@ -173,6 +175,11 @@ def main():
         openings = merge_openings(openings, json.loads(args.people.read_text()), n_frames)
     # Activity per person; a shot cut inside the window mixes two faces, rare enough to be left as is.
     activity = {person: lip_activity(o, fps) for person, o in openings.items()}
+    if args.asd:
+        # Active speaker scores (audio and face together): already a "this face is talking" signal per frame.
+        activity = {a.stem: np.load(a)[:n_frames] for a in sorted(args.asd.glob("*.npy"))}
+        if not activity:
+            sys.exit(f"error: no scores in {args.asd}")
 
     scores, coverage, visibility = score_matrix(activity, segments, n_frames, fps, args.min_coverage,
                                                 args.visibility_weight)
