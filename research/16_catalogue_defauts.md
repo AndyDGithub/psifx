@@ -248,3 +248,76 @@ montre pas de danseur mais un robot à roues : elle est en attente d'une autre v
 - **D24** : ne garder, dans la chaîne elle-même, que la plus grande composante connexe du masque.
 - **D25** : pour un plan court, prendre le fond d'un autre plan de la même caméra, trouvé par les points du décor,
   au lieu de le laisser gris.
+
+## 7. Priorité : fidélité des mouvements (2026-11-20/21, retour de l'auteur sur V5)
+
+Retour de l'auteur : sur V5, les jambes sont « raccourcies, molles », le pied qui passe derrière l'autre manque de
+profondeur, et les tapes de pied (vers 10 s) ne sont pas rendues. Pour l'usage en psychologie, une information
+manquante est grave : c'est désormais la priorité. Le personnage de l'encart doit disparaître.
+
+### 7.1 Personnage de l'encart (`fix/inset-person`)
+
+- Seule la plus grande composante du masque est gardée, pour la boîte comme pour l'invite donnée à SAM 3D Body. La
+  bande parasite au bord de l'image produisait une boîte allant du bord jusqu'à la petite silhouette, d'où le corps
+  grandeur nature.
+- `people_from_tracks.py` coupe une piste quand son masque saute (centre déplacé de plus de 15 % de la diagonale,
+  ou aire multipliée par 3). Il **écarte les images fixes** : un morceau dont les pixels ne changent pas, avec une
+  médiane inférieure à 1 niveau de gris par image pendant plus d'1 s, est une image (encart figé, affiche) et non
+  une personne.
+  - Sur V5, l'encart a un changement de **0,0** ; les danseurs vont de 5,7 à 31.
+  - L'avatar fantôme a disparu.
+
+### 7.2 Jambes (`fix/leg-fidelity`)
+
+Trois causes, mesurées sur V6 (fichier `v4_danse_2.mp4` remplacé : danse rapide en plan fixe) et sur V5.
+
+1. **Référence 2D fausse pour les jambes.** RTMW tournait sur une boîte du haut du corps (de la tête aux hanches,
+   ×1,1) : genoux, chevilles et pieds étaient hors du recadrage, donc inventés. Le danseur de V5 avait ainsi 0,7
+   torse d'écart aux chevilles. RTMW tourne maintenant une seconde fois sur la boîte du corps entier quand les
+   jambes sont dans l'image, pour les 23 points du corps et des pieds.
+2. **Lissage trop fort sur les jambes.** La coupure à 2 Hz avait été choisie pour le talk-show, où les jambes sont
+   cachées et inventées. Amplitude du mouvement des pieds par rapport aux hanches, avatar / RTMW, en moyenne sur
+   3 images (V6) :
+
+   | Lissage des jambes | 2 Hz | 4 Hz | **6 Hz** | 10 Hz | Brut |
+   |---|---|---|---|---|---|
+   | Amplitude | 0,71 | 0,82 | **0,87** | 0,88 | 0,88 |
+
+   Les jambes cachées restent tenues par leur mesure affaiblie.
+3. **Le recalage ignorait les pieds et freinait les jambes.** `body_refit.py` cale maintenant aussi les talons et
+   les orteils (23 points). Chaque point est attaché à son articulation la plus proche (`talocrural`, `ball`,
+   `subtalar`…). Le poids temporel des jambes est réduit (5·10³ contre 10⁵ ailleurs).
+
+| | Avant (2 Hz, haut du corps) | **Après** | Brut SAM 3D Body |
+|---|---|---|---|
+| V6, amplitude des pieds | 0,69 | **0,93** | 0,88 |
+| V6, erreur des pieds (torse) | 0,046 | **0,022** | 0,038 |
+| V6, dispersion avant-arrière des pieds (cm) | 6,8 | **10,8** | 7,4 |
+| V5 danseur, plan long (tapes de pied), amplitude | 0,76 | **0,98** | 1,01 |
+| V5 danseur, erreur des pieds (torse) | 0,058 | **0,019** | 0,028 |
+| V1, tremblement (doit rester celui du lissage, 0,0085) | | **0,0095** | |
+| Talk-show, OKS / PCK des poignets (annotations) | 0,816 / 0,922 | **0,835 / 0,924** | 0,830 / 0,920 |
+
+Aux images où les pieds se croisent (V5, images 481 et 561), l'avatar croise aussi les jambes. La profondeur
+(quel pied est devant) n'a pas de vérité terrain : la dispersion avant-arrière des pieds augmente (7,4 → 10,8 cm),
+mais cela ne prouve pas qu'elle est juste. FootMR (2026) montre que même les modèles vidéo récents (GVHMR) ratent
+les mouvements de pied complexes, et corrige justement avec les points 2D des pieds.
+
+**Défaut trouvé en chemin** : dans `body_refit.py`, la taille du torse était mesurée sur les mauvais points (tête
+au lieu d'épaules, coudes au lieu de hanches) depuis le passage à 17 points. C'est corrigé. L'OKS du talk-show
+n'en dépend pas ; les erreurs exprimées « en torse » d'avant ce correctif ne sont pas comparables.
+
+### 7.3 Ce qui reste
+
+- **V5, montage en filé** (images 271 à 299) : 22 plans d'une image chacun. Les couleurs des danseurs changent et
+  la personne 1 a de grandes erreurs (images rapides : 5,7 torses). Ce sont des transitions floues, à exclure ou à
+  traiter comme une seule séquence.
+- V5 : il reste 37 pics de profondeur par minute (192 en brut).
+- V6 : les légendes (« tap with one leg ») changent pendant le plan ; le fond médian en garde une trace floue.
+- Profondeur des pieds : à mesurer sur une vérité terrain 3D (MOYO, ou MOOF de FootMR).
+
+Sources :
+- FootMR, mouvements de pied en 3D à partir des points 2D des pieds (2026) : https://arxiv.org/html/2603.09681
+- WHAM, contact des pieds et glissement : https://arxiv.org/pdf/2312.07531
+- GVHMR, coordonnées gravité-vue et étiquettes de pieds immobiles : https://arxiv.org/html/2409.06662v1
+- DanceHMR : https://arxiv.org/pdf/2605.18102
