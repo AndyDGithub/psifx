@@ -72,6 +72,7 @@ class TrackingTool(VideoTool):
                     "-pix_fmt": "yuv420p",
                 },
                 overwrite=self.overwrite,
+                audio_source=video_path,
             ) as visualization_writer,
         ):
             for frame_idx, frame in enumerate(tqdm(video_reader, desc="Overlaying masks", disable=not self.verbose)):
