@@ -137,3 +137,84 @@ Ce n'est pas un défaut de pose. Il est à documenter comme limite : MHR décrit
 - Zolly, focale et distorsion de perspective : https://arxiv.org/pdf/2303.13796
 - ProPainter, inpainting vidéo : https://arxiv.org/abs/2309.03897
 - VIP, suppression de personnes en vidéo réelle : https://arxiv.org/html/2504.03041v1
+
+## 5. Correctifs appliqués (2026-11-20, une branche par correctif, empilées)
+
+Les quatre correctifs sont empilés, chacun sur sa branche, dans le worktree `.worktrees/moving-plate`.
+La chaîne qui les enchaîne est `scratch/avatar_chain2.sh`.
+
+### 5.1 Points 2D hors cadre (`fix/offframe-keypoints`)
+
+`keypoint_view.py` ne garde un point 2D que s'il est à la fois :
+- dans l'image : hors des bandes noires, trouvées une fois par vidéo, et à plus de 1,5 % de la hauteur du bord ;
+- sur le masque SAM3 de sa personne, dilaté de 12 px.
+
+Ce filtre est utilisé par `hand_refit.py`, par la visibilité du lissage robuste et par les mesures.
+
+| AVA | Avant | Après |
+|---|---|---|
+| Points de main RTMW gardés | 100 % | 49 % (51 % hors cadre) |
+| Erreur des mains mesurée (taille de main), p0 / p1 | 0,50 / 0,99 | 0,10 / 0,40 |
+| Erreur du corps mesurée (taille de torse), p0 / p1 | 0,20 / 0,27 | 0,05 / 0,12 |
+| Mains cachées : déplacement entre l'ancien et le nouveau recalage | — | 78 / 88 px (médiane) |
+| Mains vues : même déplacement | — | 0,3 / 4 px |
+
+L'essentiel de l'erreur était **dans la mesure**, pas dans l'avatar : sur les points vus, l'ancien recalage fait
+aussi bien que le nouveau. Le correctif sert surtout aux mains cachées. Le recalage les tirait vers le bord de
+l'image ; elles restent maintenant là où le lissage les place.
+
+### 5.2 Fond en caméra mobile (`fix/moving-camera-plate`)
+
+- **Coupes trouvées à la pleine fréquence d'images**, comme le fait le rendu. Une coupe change l'image d'une image à
+  l'autre ; un panoramique la change peu à chaque image. Avec 0,2 s entre deux images comparées, chaque panoramique
+  passait pour une série de coupes.
+  - AVA : 21 fausses coupes → 0.
+  - Talk-show : 106 coupes, contre 115 avec l'ancienne règle.
+- **Mosaïque par plan mobile.** Les images du plan sont enchaînées par des homographies calculées sur le décor, dans
+  le repère de l'image du milieu (moins de dérive qu'à partir de la première). On en retire :
+  - les personnes ;
+  - les incrustations, c'est-à-dire ce qui reste fixe à l'écran alors que le décor, réaligné, change (logo) ;
+  - les bandes noires.
+  Le rendu découpe ensuite le fond de chaque image dans cette mosaïque.
+- **AVA** : un seul plan (déplacement de 861 px), et le fond retrouvé sur toute la vidéo.
+  - Écart médian au vrai décor : 3 niveaux de gris.
+  - 93 % des pixels du décor sont à moins de 20 niveaux.
+  - Défaut restant : les 2 premières secondes (panoramique rapide et flou), avec un écart de 43 niveaux.
+- **Talk-show** : 7 petits plans mobiles (zooms, recadrages) reçoivent eux aussi une mosaïque.
+
+### 5.3 Recalage du corps entier (`fix/body-refit`)
+
+`body_refit.py` cale les 17 points COCO de l'avatar sur RTMW. Ces points sont ceux de MHR70, ceux que comparent les
+annotations. Pour éviter de calculer le maillage, chaque point est attaché à une articulation par son décalage dans
+le repère de celle-ci (0,3 cm d'erreur après un déplacement de 55 cm du coude). Le terme temporel est allégé là où
+la 2D bouge vite.
+
+Pour la mesure, une image sur 5 est retirée du recalage et l'erreur est mesurée sur ces images.
+
+| | Lissé | **Recalé** | Brut |
+|---|---|---|---|
+| Talk-show, OKS / PCK@0,05 / PCK des poignets (annotations) | 0,816 / 0,768 / 0,922 | **0,841 / 0,790 / 0,931** | 0,830 / 0,769 / 0,920 |
+| Talk-show, erreur sur les images retirées (torse), p0 / p1 | 0,063 / 0,055 | **0,030 / 0,032** | |
+| V1, erreur sur les images retirées | 0,035 | **0,019** (tremblement égal au lissé) | |
+| AVA, erreur sur les images retirées, p0 / p1 | 0,052 / 0,115 | **0,030 / 0,074** | |
+| Danse animée, erreur sur les images retirées, toutes / rapides | 0,33 / 1,30 | **0,24 / 1,13** | |
+
+Deux essais ont échoué, et leurs leçons sont gardées :
+- **Articulations nues, tête libre, sans point du visage** : l'avatar se rapproche de RTMW mais la tête dérive.
+  L'OKS tombe de 0,816 à 0,747. Être proche du détecteur ne veut pas dire être juste.
+- **Poids temporel ajusté selon (fps/25)⁴** : à 60 images/s, le problème devient trop raide pour converger (OKS
+  0,70). Le bruit du détecteur est propre à chaque image, donc le poids reste défini par image (10⁵).
+
+Coût : le tremblement du talk-show passe de 0,004 à 0,011 torse par image², soit encore 14 fois moins que le brut.
+
+### 5.4 Taille en gros plan (`fix/closeup-size`)
+
+Le défaut annoncé (« taille fausse jusqu'à ×2,35 ») était **surtout un artefact de mesure**. En gros plan, RTMW
+invente des épaules et des poignets hors du cadre ou collés au bord.
+- Mesurée seulement sur les points vus, la dispersion entre plans de la personne 0 passe de 9 % à 4 %.
+- Mesurée sur le seul visage (nez, yeux, oreilles), la taille de l'avatar correspond à l'image dans **tous** les
+  plans, à 0,87–1,07 près. La tête est un peu trop petite (jusqu'à −13 %) dans les cadrages les plus serrés.
+
+Recaler en plus la profondeur et la position (option `--depth`) ne change pas l'OKS (0,843) et triple le
+tremblement : l'option est laissée désactivée. Les changements de taille visibles dans le talk-show viennent donc
+du montage, pas de l'avatar.
