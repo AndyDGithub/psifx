@@ -162,8 +162,14 @@ entraînement retrouve une personne par sa seule morphologie environ trois fois 
 simplement ; CAL, le meilleur modèle publié sur MEVID, reproduit à 52,5\,\% de Rank-1, ne fait pas mieux (3,5\,\%) dès que la
 tenue change. Un outil de pose relit sur l'avatar ce que le modèle 3D a extrait (OKS 0,848), mais les mains restent le point faible.
 Un modèle de démarche publié (GaitGraph2), reproduit sur CASIA-B, reste au niveau du hasard sur MEVID même sur les vidéos
-d'origine, alors que les avatars gardent l'essentiel du mouvement qu'il lit. Restent à mesurer les autres comportements et un
-attaquant de démarche entraîné sur des vidéos de surveillance.
+d'origine, alors que les avatars gardent l'essentiel du mouvement qu'il lit. La fidélité des avatars a ensuite été travaillée. Un
+lissage robuste supprime toutes les téléportations sans aplatir les gestes (PCK des poignets 0,922) ; les expressions du visage,
+que SAM~3D Body ne fournit pas, sont lues par MediaPipe (le sourire relu sur l'avatar passe de 0,16 à 0,74 de corrélation) ; un
+recalage des bras et des doigts sur des détecteurs de mains divise l'erreur des mains par 2,7. Une nouvelle chaîne attribue 92,8\,\%
+des mots du talk-show au bon locuteur, contre 48,1\,\%. Les visualisations de psifx gardent désormais le son. La même chaîne passée
+sur quatre scénarios (montage, caméra fixe, caméra mobile, danse) donne un catalogue des défauts classés par cause, et un ordre de
+correction : points 2D hors cadre, fond en caméra mobile, recalage du corps entier sur les gestes rapides, taille en gros plan.
+Restent à mesurer les autres comportements et un attaquant de démarche entraîné sur des vidéos de surveillance.
 
 \tableofcontents
 
@@ -1181,6 +1187,11 @@ Script & Branche & Rôle \\
 \code{sam3d_body/repeat_study.py} & \code{optim/mesh-keyframes} & Calculs répétés en bfloat16 et float32 pour expliquer les mains instables \\
 \code{scene3d/decor_cameras.py} & \code{docs/plan-3d-reproduction} & Plans, groupes de caméra et fonds par les points clés du décor \\
 \code{scene3d/render_avatars.py} & \code{feature/avatar-render} & Vidéo avec avatars : maillage reconstruit, fond de la caméra ou gris, morphologie propre ou neutre, son et sous-titres \\
+\code{sam3d_body/robust_smooth.py}, \code{smooth_params.py --variants robust} & \code{optim/motion-fidelity} & Lissage robuste : valeurs aberrantes retirées, parties cachées moins crues, Kalman avant-arrière, profondeur à part \\
+\code{sam3d_body/motion_diag.py} & \code{optim/motion-fidelity} & Accélération et pics par partie du corps, en repère caméra \\
+\code{sam3d_body/face_blendshapes.py}, \code{face_expression.py} & \code{feature/face-expression} & Blendshapes MediaPipe lus sur chaque visage, convertis en expressions MHR \\
+\code{sam3d_body/hand_reference.py}, \code{hand_refit.py} & \code{feature/hand-refit} & Points de main RTMW et RTMPose, puis recalage des bras, poignets et doigts \\
+\code{e2e/speakers.py} & \code{fix/speaker-link} & Qui parle : Light-ASD, diarisation sur-découpée, visages, empreintes de voix, sous-titres \\
 \code{mevid/sample_tracklets.py} & \code{experiment/mevid-small-crops} & Choix des pistes MEVID et des fenêtres de 32 images \\
 \code{mevid/sam3d_test_split.py} & \code{experiment/mevid-small-crops} & SAM~3D Body et ViTPose sur chaque découpe, reprise possible \\
 \code{mevid/summarize_test_split.py} & \code{experiment/mevid-small-crops} & Filtre des découpes sans personne, qualité par taille \\
@@ -2117,7 +2128,8 @@ En haut un plan large, en bas un gros plan. Les avatars suivent la posture, l'or
 
 \paragraph{Ce que montre la vérification à l'œil.}
 \begin{itemize}
-    \item Les avatars se superposent bien aux personnes, à la bonne échelle, mains comprises, dans tous les cadrages.
+    \item Les avatars se superposent bien aux personnes, mains comprises, dans tous les cadrages. Leur taille varie pourtant au fil
+    des plans : la section~\ref{sec:res-demo} montre que la cause est le montage et l'estimation en gros plan, pas le rendu.
     \item La morphologie neutre se voit surtout sur la femme : l'avatar perd sa silhouette.
     \item 69 plans sur 118 reçoivent le fond de leur caméra ; les autres, courts ou sans caméra fiable, restent gris. Deux fonds ont
     été écartés par la règle de fiabilité (section~\ref{sec:impl-avatar}) : celui d'une vidéo insérée, et celui d'un plan unique dont
@@ -2196,6 +2208,325 @@ Morphologie fixée & 8,7 & 0,822 & 0,911 & 17 \\
     \item L'OKS brut (0,830) est plus bas que celui des pistes d'origine (0,849), car les morceaux écartés comme \enquote{autre} n'ont
     plus d'avatar, dont quelques vraies apparitions des deux personnes.
 \end{itemize}
+
+\section{Mouvement fidèle : lissage robuste et 60 images/s}
+\label{sec:res-motion}
+
+Les vidéos de la section précédente restaient saccadées, pour deux causes mesurées. D'abord, la pose n'était calculée qu'une image sur
+deux et gardée jusqu'à la suivante : l'avatar bougeait par paliers à 30 images/s. Ensuite, des à-coups rares mais grands subsistaient.
+Pour les trouver, \code{motion_diag.py} mesure l'accélération de chaque articulation en repère caméra et compte les \enquote{pics} :
+une articulation à plus de 40~mm de la moyenne de ses deux voisines, c'est-à-dire une téléportation d'une image.
+
+\begin{itemize}
+    \item \textbf{Les plus gros pics sont des erreurs de profondeur} : jusqu'à 1,7~m sur une seule image, l'avatar rétrécit puis revient.
+    \item \textbf{Savitzky-Golay étale une valeur fausse} sur ses voisines au lieu de la retirer.
+    \item \textbf{Les jambes ne sont jamais vues en entier} (chevilles hors image sur toutes les images, sous la table sur les plans
+    larges) : le modèle les invente, d'où 172 pics par minute sur les jambes brutes.
+\end{itemize}
+
+Le lissage robuste (\code{robust_smooth.py}) traite chaque cause :
+\begin{enumerate}
+    \item il retire les valeurs aberrantes (filtre de Hampel : écart à la médiane d'une fenêtre courte, avec un seuil physique minimal
+    pour ne pas toucher aux gestes) ;
+    \item il croit moins les parties cachées : une partie (jambes, bras, poignets, doigts, par côté) dont les points 2D sont hors image
+    ou hors du masque SAM3 compte 100 fois moins ;
+    \item il lisse par un filtre de Kalman avant-arrière (Rauch-Tung-Striebel, vitesse constante), avec une fréquence de coupure par
+    partie du corps \cite{sambody4d2025} ;
+    \item il traite la profondeur à part : la translation est lissée comme une position dans l'image et un logarithme de la profondeur,
+    de sorte que lisser la profondeur ne déplace plus l'avatar dans l'image.
+\end{enumerate}
+
+Les images impaires ont ensuite été calculées à leur tour (9351 images, 2~h~11, 0,84~s par image) et le rendu interpole entre deux
+images calculées au lieu de garder la pose (tableau~\ref{tab:motion}).
+
+\begin{table}[H]
+\centering
+\caption{Fidélité du mouvement sur le talk-show à 60 images/s, deux personnes. Accélération p95 entre images consécutives d'un même plan.
+OKS et PCK contre les 200 images annotées.}
+\label{tab:motion}
+\small
+\begin{tabularx}{\textwidth}{@{}Yrrr@{}}
+\toprule
+Mesure & Brut & Savitzky-Golay 13 images & \textbf{Robuste} \\
+\midrule
+Pics par minute, squelette / profondeur & 386 / 118 & 0,6 / 1,2 & \textbf{0 / 0} \\
+Accélération p95 : corps / jambes / poignets / doigts (mm) & 56 / 76 / 62 / 49 & -- & \textbf{1,5 / 0,4 / 1,8 / 1,1} \\
+OKS / PCK@0,05 / PCK poignets & 0,830 / 0,770 / 0,920 & 0,824 / 0,776 / 0,922 & 0,816 / 0,769 / \textbf{0,922} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{itemize}
+    \item \textbf{Le mouvement devient lisse sans perdre la pose} : plus aucun pic, l'accélération des poignets est divisée par 34, et
+    le PCK des poignets reste celui du brut (0,922), donc les gestes ne sont pas aplatis.
+    \item \textbf{Une profondeur trop lissée coûte} : coupée à 0,4~Hz, l'OKS tombe à 0,75, car la taille de l'avatar ne colle plus à
+    l'image. La coupure retenue est de 2~Hz.
+    \item \textbf{Le lissage traîne sur les gestes rapides} : sur un mouvement vif des mains, les poignets lissés restent jusqu'à
+    100~px derrière le brut pendant quelques images. Sur les 25\,\% d'images où les poignets bougent le plus, coudes et poignets sont à
+    35~px de la détection 2D contre 27~px pour le brut (personne~0 ; 41 contre 36 pour la personne~1). Il n'y a en revanche aucun
+    décalage temporel : le meilleur accord est sans décalage, pour les deux personnes.
+\end{itemize}
+
+\section{Expressions du visage}
+\label{sec:res-face}
+
+Le visage des avatars restait figé. La cause est dans le code de SAM~3D Body : les 72 paramètres d'expression et la mâchoire sont mis
+à zéro en sortie, quel que soit le mode. Il faut donc une autre source. Les noms des 72 expressions de MHR sont publiés
+\cite{mhrfaceexpr} : la conversion depuis les 52 blendshapes ARKit de MediaPipe Face Landmarker est une table de correspondance nom
+à nom, et non un modèle appris.
+
+\begin{itemize}
+    \item \textbf{Lecture} (\code{face_blendshapes.py}) : MediaPipe sur un carré autour de chaque visage, avec une marge de 2,4 (à 1,8,
+    le détecteur manquait la moitié des visages de l'homme). Quand psifx ne place pas le visage, la tête de SAM~3D Body le fait : la
+    couverture passe de 35 à 43\,\% des images pour l'homme (souvent de dos ou flou au premier plan) et de 48 à 73\,\% pour la femme.
+    \item \textbf{Conversion} (\code{face_expression.py}) : le visage de repos de chaque personne est retiré (20\up{e} centile : les
+    lunettes se lisent comme un demi-clignement), le signal est lissé sans rejet sur les paupières, et la mâchoire est pilotée par
+    l'écart des lèvres, car \code{jawOpen} ne bouge presque pas chez ces deux personnes.
+    \item \textbf{Rendu} : 32 niveaux d'ombre et une lumière de côté au lieu de 6 niveaux face à la caméra, pour que le relief des
+    lèvres se voie (7~ms de plus par maillage).
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Relecture du visage : MediaPipe passé sur le visage de l'avatar, corrélation avec le signal de l'original (extrait de 33~s).}
+\label{tab:face}
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Blendshape & Sans expressions & Avec \\
+\midrule
+Sourire (gauche) & 0,16 & \textbf{0,74} \\
+Moue & 0,31 & 0,61 \\
+Sourcils intérieurs & 0,03 & 0,42 \\
+Moyenne pondérée & 0,22 & 0,33 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Le sourire, signal social important pour le cas d'utilisation, passe nettement. Deux limites restent. Les \textbf{clignements ne
+passent pas}, car MHR n'a pas de globes oculaires (le regard non plus ne peut pas être rendu). La relecture sous-estime les fortes
+valeurs, car MediaPipe ne trouve plus le visage d'un avatar très expressif : le gain de la mâchoire a été réglé à l'œil, puisqu'en se
+fiant à la relecture seule l'avatar \enquote{criait}.
+
+\section{Mains recalées sur des détecteurs de mains}
+\label{sec:res-hands}
+
+La mesure d'utilité (section~\ref{sec:res-utility}) désignait les mains comme le point faible. Les annotations du talk-show n'ont que
+les 17 points COCO : la référence est donc donnée par les meilleurs détecteurs 2D libres (\code{hand_reference.py}, 9~min pour la
+vidéo à 60 images/s). RTMW-x \cite{jiang2024rtmw} lit le corps entier (133 points), puis RTMPose-m lit chaque main (21 points) sur un
+recadrage. Environ 40\,\% des points de main sont vus avec une confiance supérieure à 0,3, les mains étant ailleurs sous la table ou
+hors champ.
+
+\code{hand_refit.py} part des paramètres lissés et ne change que 76 angles (bras 16, poignets 6, doigts 54). Il cherche à faire
+tomber les 21 points projetés de chaque main sur RTMW :
+\begin{itemize}
+    \item la distance est robuste (Geman-McClure) et pondérée par la confiance ;
+    \item un rappel ramène vers la pose lissée, et un coût pénalise l'accélération du changement ;
+    \item les points de main de MHR sont des articulations du squelette, qui ne dépend pas de la morphologie : le recalage tourne sans
+    calculer le maillage.
+\end{itemize}
+Pour ne pas se juger sur sa propre cible, le recalage vise RTMW et il est jugé sur le modèle de main, qu'il n'a jamais vu
+(tableau~\ref{tab:hands}).
+
+\begin{table}[H]
+\centering
+\caption{Mains sur toute la vidéo à 60 images/s, personnes 0 / 1. Erreurs en tailles de main.}
+\label{tab:hands}
+\small
+\begin{tabularx}{\textwidth}{@{}Yrrr@{}}
+\toprule
+Mesure & Brut & Lissé & \textbf{Recalé} \\
+\midrule
+Erreur médiane au modèle de main & 0,24 / 0,23 & 0,24 / 0,24 & \textbf{0,09 / 0,09} \\
+PCK@0,1 main & 0,15 / 0,14 & 0,13 / 0,12 & \textbf{0,52 / 0,54} \\
+Accélération p95 des points de main & 0,62 / 0,77 & 0,018 / 0,022 & 0,023 / 0,032 \\
+Accélération p95 des poignets (mm) & 61,9 & 1,8 & 2,5 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{itemize}
+    \item \textbf{L'erreur des mains est divisée par 2,7} pour un tremblement à peine plus grand que celui du lissage, qui retirait le
+    bruit mais pas l'erreur (même erreur que le brut).
+    \item \textbf{Le poids du terme temporel} ($5\cdot10^4$) a été choisi sur les images 8900 à 9100 : $2\cdot10^4$ colle plus aux
+    détecteurs mais tremble deux fois plus, et $10^5$ est aussi calme que le lissage mais moins juste.
+    \item Sur la vidéo à caméra fixe (section~\ref{sec:res-scenarios}), l'erreur passe de 0,15 à 0,05 (PCK@0,1 de 0,23 à 0,88).
+\end{itemize}
+
+\section{Qui parle : sous-titres sur trois vidéos}
+\label{sec:res-speakers}
+
+Sur la vidéo d'avatars, la voix de l'animateur était marquée \enquote{hors champ}. La diarisation trouvait trois voix pour deux
+personnes : l'animateur était coupé en deux groupes, et l'association par les lèvres, qui donne une personne par voix, envoyait le
+gros groupe hors champ (sa bouche n'est visible que 39\,\% du temps où il parle). La nouvelle chaîne (\code{speakers.py}) inverse la
+logique :
+\begin{enumerate}
+    \item le locuteur actif est lu par Light-ASD \cite{liao2023lightasd} sur les personnes regroupées ;
+    \item la diarisation est volontairement trop découpée (6 voix au plus) ;
+    \item chaque morceau est relié à un visage ;
+    \item les morceaux sans visage sont réunis par empreinte de voix (ceux d'une même voix se ressemblent à 0,91--0,93, ceux de voix
+    différentes à 0,03--0,33 ; le résultat ne bouge pas entre les seuils 0,4 et 0,6).
+\end{enumerate}
+Le nombre de personnes n'est plus donné : 6 n'est qu'une borne haute.
+
+\begin{table}[H]
+\centering
+\caption{Part de la parole attribuée au bon locuteur.}
+\label{tab:speakers}
+\small
+\begin{tabularx}{\textwidth}{@{}Yrrr@{}}
+\toprule
+Vidéo (vérité) & Lèvres (avant) & \textbf{Nouvelle chaîne} & Voix comptées \\
+\midrule
+Talk-show (sous-titres faits main, 4 voix) & 48,1\,\% des mots & \textbf{92,8\,\%} & 4 (juste) \\
+Exemple (micros séparés, 1 personne vue, 1 voix hors champ) & -- & \textbf{100\,\%} du temps & 2 (juste) \\
+Film AVA doublé (AVA-ActiveSpeaker \cite{roth2020ava}) & 61,7\,\% & \textbf{87,8\,\%} & 3 (2 + 3,6~s hors champ) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Les sous-titres sont écrits de la couleur de la personne sur un bandeau noir à 70\,\%, lisible même sur un avatar de la même couleur.
+Il reste une erreur : les 6 mots de la voix derrière la caméra sont collés par Whisper à une ligne de l'explicateur.
+
+\section{Démonstration côte à côte, son et taille de l'avatar}
+\label{sec:res-demo}
+
+La démonstration montre l'original et la vidéo d'avatars côte à côte, synchronisés, avec le son et les sous-titres (3840$\times$1080,
+60 images/s ; figure~\ref{fig:demo-ts}). Deux défauts relevés à son visionnage ont été expliqués.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/demo_talkshow.jpg}
+\caption{Démonstration sur le talk-show : original à gauche, avatar recalé (mains, visage, lissage robuste) sur le fond de sa caméra à
+droite, sous-titre de la couleur de la personne. Sur ce geste rapide, la main gauche de l'avatar est en retard.}
+\label{fig:demo-ts}
+\end{figure}
+
+\paragraph{Le son perdu.} Les visualisations de psifx (pose, suivi, OpenFace) écrivaient les images sans le son de la vidéo d'origine.
+\code{VideoWriter} accepte désormais une source de son (\code{audio_source}), remultiplexée par ffmpeg à la fermeture sans
+réencoder l'image. La vidéo reste inchangée si la source est muette ou si ffmpeg échoue, avec un avertissement. La correction est
+couverte par 5 tests unitaires et vérifiée sur une vraie commande \code{psifx video pose mediapipe visualization} (branche
+\code{fix/visualization-audio}).
+
+\paragraph{L'avatar qui grossit et rétrécit.} La question était de savoir si le défaut vient des données extraites ou du rendu. Trois
+mesures le tranchent :
+\begin{itemize}
+    \item \textbf{Ce n'est pas le rendu.} La silhouette rendue couvre la même aire que le masque SAM3 de la personne (rapport 1,00, IoU
+    0,83 à 0,85), aussi bien en brut qu'en final.
+    \item \textbf{Ce n'est pas le lissage.} Dans un même plan, la taille de l'avatar rapportée à celle de la personne (dispersion de
+    11 points du haut du corps, insensible à la rotation) varie de moins de 4\,\%, et les fonds collent à leur plan à 2\,\% près.
+    \item \textbf{C'est le montage et les gros plans.} Le cadrage change de plus de 25\,\% environ 11 fois par minute, trois plans
+    zooment (jusqu'à $\times$1,5), et sur environ 8\,\% des images, en gros plan ou en insert, SAM~3D Body se trompe de taille
+    (jusqu'à $\times$2,35). Il suppose en effet une focale fixe, fausse sur des cadrages serrés \cite{hao2025perspose}.
+\end{itemize}
+La même chaîne sur la vidéo d'exemple, à caméra fixe, confirme le diagnostic : la taille y varie de 1,5\,\% (0,5\,\% d'une image à
+l'autre).
+
+\section{Quatre scénarios : catalogue des défauts}
+\label{sec:res-scenarios}
+
+Avant de corriger, la même chaîne complète a été passée sur quatre vidéos de difficulté différente, pour corriger des causes et non
+des symptômes (tableau~\ref{tab:scenarios}, figures~\ref{fig:demo-v1} à~\ref{fig:offframe}). Les erreurs 2D sont mesurées contre RTMW
+(points de confiance supérieure à 0,5) en tailles de torse, et celles des mains en tailles de main.
+
+\begin{table}[H]
+\centering
+\caption{Mesures de la chaîne avatar sur quatre scénarios. TS : talk-show monté (2 personnes, 60 images/s). V1 : caméra fixe,
+1 personne. V2 : film AVA, 2 personnes, caméra qui bouge lentement, corps coupés par le cadre. V4 : danse d'un personnage animé non
+humain (queue, jupe, cheveux), 608$\times$1080. Deux valeurs : personne 0 / personne 1.}
+\label{tab:scenarios}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}Yllll@{}}
+\toprule
+Mesure & TS & V1 & V2 & V4 \\
+\midrule
+Taille dans un plan, écart-type & $<$4\,\% & 1,5\,\% & 7 / 9\,\% & \textbf{13\,\%} \\
+Taille d'une image à l'autre, p95 & -- & 0,5\,\% & 7 / 8\,\% & \textbf{25\,\%} \\
+Silhouette contre masque : IoU & 0,83--0,85 & 0,88 & 0,83 / 0,80 & \textbf{0,54} \\
+Corps 2D : médiane / PCK@0,2 & OKS 0,82 & 0,05 / 0,89 & 0,20 / 0,50 ; 0,27 / 0,44 & \textbf{0,34 / 0,40} \\
+Corps 2D, 10\,\% d'images les plus rapides : brut $\to$ final & -- & 0,047 $\to$ 0,054 & 0,23 $\to$ 0,22 & \textbf{0,86 $\to$ 0,94} \\
+Mains, médiane : lissé $\to$ recalé & 0,24 $\to$ 0,09 & 0,15 $\to$ 0,05 & 0,62 $\to$ 0,50 ; \textbf{1,11 $\to$ 0,99} & 0,37 $\to$ 0,25 \\
+Pics par minute : brut $\to$ final & 386 $\to$ 0 & 119 $\to$ 0 & 262 $\to$ 0,2 & \textbf{1367 $\to$ 293} \\
+Demi-tours du corps en une image ($>$45°) : brut $\to$ final & -- & 0 $\to$ 0 & 0 $\to$ 0 & \textbf{27 $\to$ 0} \\
+Visage lu & 43 / 73\,\% & 99,7\,\% & 87 / \textbf{65\,\%} & \textbf{28\,\%} \\
+Plans avec fond de caméra & 69/118 & 1/1 & \textbf{0/1} & 1/1 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/demo_v1.jpg}
+\caption{V1, caméra fixe : le cas le plus simple. Halo autour de l'avatar : le décor caché par la personne n'est jamais vu (12,9\,\% de
+l'image) et l'inpainting l'étale.}
+\label{fig:demo-v1}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/demo_v2_ava.jpg}
+\caption{V2, film AVA à caméra mobile : postures et orientations suivies, une couleur par personne. Le fond reste gris : le panoramique
+est pris pour 21 coupes et aucun fond n'est retrouvé.}
+\label{fig:demo-v2}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/demo_v4_danse.jpg}
+\caption{V4, danse d'un personnage animé : l'orientation et les grands gestes sont suivis, mais la queue, la jupe et les cheveux ne
+sont pas représentables par un modèle de corps humain.}
+\label{fig:demo-v4}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/v2_points_hors_cadre.jpg}
+\caption{V2 : points RTMW (vert, poignets en gros) et points de l'avatar (cercles rouges). Quand les mains sont hors du cadre, RTMW les
+place quand même au bord de l'image avec une confiance supérieure à 0,5.}
+\label{fig:offframe}
+\end{figure}
+
+Les défauts se regroupent par cause (tableau~\ref{tab:defects}) :
+
+\begin{table}[H]
+\centering
+\caption{Défauts classés par cause. Priorité A : visible dans toute la vidéo ou fausse les mesures ; B : visible par moments ; C :
+mineur ou limite du modèle.}
+\label{tab:defects}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.6cm}Yll@{}}
+\toprule
+Cause & Défaut & Où & Prio. \\
+\midrule
+Référence 2D & Mains hors cadre détectées au bord de l'image avec confiance ; le recalage des mains les suit (V2, personne 1 : 0,99 taille de main) & V2, TS & A \\
+ & RTMW confond la queue et la jupe avec les jambes & V4 & B \\
+SAM~3D Body & Taille fausse en gros plan (focale fixe supposée) & TS & A \\
+ & Taille qui \enquote{respire} en caméra mobile & V2 & B \\
+ & Mouvement rapide : brut très instable (bruit médian 71~mm, demi-tours) & V4 & A \\
+Lissage & En retard sur les gestes rapides ; rien ne recale le corps sur l'image & V4, TS & A \\
+Forme & Queue, jupe, cheveux, manteaux non représentables & V4, V2 & C \\
+Visage & Visage animé ou de profil peu lu ; pas de clignement & V4, V2, TS & B--C \\
+Fond & Caméra mobile : aucune plaque (fausses coupes, plaque fixe inadaptée) & V2 & A \\
+ & Halo du décor jamais vu ; plans sans fond fiable en gris & V1, TS & B \\
+ & Seuils du fond à régler à la main pour un plan unique & V1, V4 & C \\
+Rendu & Dessin du maillage par lots : 0,85\,\% des pixels diffèrent d'un dessin triangle par triangle, sur les bords, sans trou & V1 & C \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{Ce qui n'est pas une cause.} Le rendu (aire de la silhouette égale à celle du masque, pas de trou dans le maillage), les
+inversions avant/arrière (toutes supprimées par le lissage, 27 à 0 sur la danse) et un décalage temporel (meilleur accord sans
+décalage). Le personnage de danse, non humain, sort du cas d'utilisation : il est remplacé dans la suite par des danses humaines, l'une
+montée et lente, l'autre en plan fixe et rapide.
+
+\paragraph{Ordre de correction retenu.}
+\begin{enumerate}
+    \item Ignorer les points 2D hors cadre ou hors du masque de la personne : c'est peu coûteux, cela rend les mesures justes, et
+    c'est la condition de tout recalage.
+    \item Fond en caméra mobile : détection de coupes robuste au mouvement de caméra, puis un fond par image recalé par homographie.
+    \item Recaler le corps entier sur la 2D, avec un poids temporel adapté à la vitesse, pour les gestes rapides.
+    \item Taille en gros plan : focale par plan \cite{hao2025perspose}, ou échelle recalée sur la hauteur du masque.
+\end{enumerate}
 
 \section{Utilité : un outil lit-il encore le corps sur l'avatar ?}
 \label{sec:res-utility}
@@ -2489,6 +2820,11 @@ Plusieurs écueils rencontrés valent d'être notés, car ils faussent silencieu
     \item Les intégrations ne suivent qu'une personne par vidéo, comme MediaPipe ; le multi-personnes passe par les
     masques SAM3.
     \item Licence de Sapiens2 non validée ; Sapiens2-1B non re-mesuré dans la dernière passe.
+    \item Avatars : pas de vérité terrain 3D ni de doigts annotés. Les mains et le corps sont jugés contre les meilleurs détecteurs
+    2D, eux-mêmes faillibles (points hors cadre, personnages non humains) ; la relecture du visage sous-estime les fortes
+    expressions.
+    \item MHR n'a ni globes oculaires (pas de regard ni de clignement) ni vêtements : manteaux, jupes et queue ne sont pas
+    représentables.
 \end{itemize}
 
 \section{Retirer l'apparence : ce que disent les premières mesures}
@@ -2573,6 +2909,7 @@ Septembre -- octobre 2026 & État de l'art, banc de mesure, intégration de quat
 Octobre 2026 & Suites de la réunion du 13 octobre ; test de bout en bout ; correction du suivi SAM3 ; diarisation et MediaPipe modernisés \\
 Fin octobre -- début novembre 2026 & Tout fusionné sur \code{dev}, publication sur \code{main} ; vérité terrain du talk-show ; SAM~3D Body \\
 Novembre 2026 & Direction 3D : paramètres, images clés, caméras par le décor, vidéo avec avatars, MEVID ; une personne par avatar, stabilité, première mesure d'utilité ; attaquants d'identité (CAL, paramètres, GaitGraph2) \\
+19--20 novembre 2026 & Fidélité des avatars : lissage robuste à 60 images/s, expressions du visage, mains recalées, qui parle ; démonstration côte à côte avec le son ; catalogue des défauts sur quatre scénarios \\
 Décembre 2026 & Utilité (gestes dans le temps, visage), attaquant de démarche entraîné sur MEVID ; rédaction finale (échéance de travail fin décembre, rendu en janvier) \\
 \bottomrule
 \end{tabularx}
@@ -2710,6 +3047,17 @@ toujours pas intégré à \code{transformers} (section~\ref{sec:veille}). Le tes
     SAM~3.1 dès qu'il est utilisable, et une détection une image sur N.
 \end{enumerate}
 
+Le catalogue des défauts des avatars (section~\ref{sec:res-scenarios}) fixe enfin l'ordre des corrections suivantes :
+\begin{enumerate}[resume]
+    \item \textbf{Points 2D hors cadre} : ignorer les points proches du bord ou hors du masque SAM3 avant tout recalage et toute
+    mesure.
+    \item \textbf{Fond en caméra mobile} : détection de coupes robuste au mouvement de caméra, puis un fond par image recalé par
+    homographie, ou un inpainting vidéo \cite{zhou2023propainter}.
+    \item \textbf{Recalage du corps entier} sur la 2D, avec un poids temporel adapté à la vitesse, pour les gestes rapides et la danse.
+    \item \textbf{Taille en gros plan} : focale estimée par plan \cite{hao2025perspose}, ou échelle recalée sur la hauteur du masque.
+    \item \textbf{Danse humaine} : refaire les tests sur des danses humaines, l'une montée et lente, l'autre en plan fixe et rapide.
+\end{enumerate}
+
 Restent en réserve : les optimisations de vitesse vidéo du tableau~\ref{tab:futur}, une nouvelle mesure de DETRPose
 avec synchronisation CUDA et de toutes les vitesses sur un GPU non partagé, et la validation de la licence de
 Sapiens2 avant tout nouvel investissement.
@@ -2752,7 +3100,9 @@ personne, à plusieurs niveaux d'apparence, avec le son et les sous-titres ; les
 vidéos de surveillance de MEVID, la chaîne tient dès 64~px de haut avec un filtre, et une première mesure montre que la morphologie
 identifie un peu, alors que le mouvement, décrit simplement ou lu par un modèle de démarche publié, n'identifie pas d'une caméra à
 l'autre ; les avatars gardent pourtant l'essentiel de ce mouvement. Il reste l'essentiel pour le cas d'utilisation : mesurer
-que le comportement reste observable, et entraîner un attaquant de démarche sur des vidéos de surveillance. Comme l'a rappelé la réunion du 10 novembre, le
+que le comportement reste observable, et entraîner un attaquant de démarche sur des vidéos de surveillance. Les avatars sont désormais
+lisses sans perdre les gestes, ils sourient, leurs mains suivent l'image et les sous-titres désignent le bon locuteur ; un catalogue
+mesuré des défauts sur quatre scénarios dit ce qui reste à corriger, et dans quel ordre. Comme l'a rappelé la réunion du 10 novembre, le
 résultat attendu n'est pas une anonymisation, mais un compromis chiffré entre ce qu'on garde du comportement et ce qui reste de
 l'identité.
 
@@ -2801,7 +3151,12 @@ Branche & Contenu \\
 \code{eval/pose-models-hf} & Comparaison de modèles de pose (mergée) \\
 \code{eval/talkshow-subtitles} & Comparaison aux sous-titres de référence (mergée) \\
 \code{feature/mesh-params} & Paramètres MHR dans les archives (en cours) \\
-\code{docs/plan-3d-reproduction} & Plan de reproduction, tests du décor et des images clés (en cours) \\
+\code{docs/plan-3d-reproduction} & Plan de reproduction, tests du décor et des images clés, catalogue des défauts (en cours) \\
+\code{optim/motion-fidelity} & Lissage robuste, 60 images/s, diagnostic du mouvement (en cours) \\
+\code{feature/face-expression} & Expressions du visage depuis MediaPipe (en cours) \\
+\code{feature/hand-refit} & Points de main de référence et recalage des mains (en cours) \\
+\code{fix/speaker-link} & Qui parle : Light-ASD, diarisation sur-découpée, empreintes de voix (en cours) \\
+\code{fix/visualization-audio} & Son gardé dans les visualisations de psifx (à fusionner) \\
 \bottomrule
 \end{tabular}
 \end{table}
