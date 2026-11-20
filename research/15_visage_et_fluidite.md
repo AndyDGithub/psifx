@@ -214,3 +214,31 @@ Sources :
 - Lisseurs robustes aux valeurs aberrantes (Hampel, RTS) : https://apps.dtic.mil/sti/pdfs/ADA093543.pdf et https://arxiv.org/html/2410.20411v1
 - DanceHMR (mains en vidéo, code non publié) : https://arxiv.org/pdf/2605.18102
 - SAM 3D Body, points de contrôle DINOv3 / ViT-H : https://github.com/facebookresearch/sam-3d-body
+
+## 11. Mains recalées sur des détecteurs de mains : fait le 2026-11-20 (branche `feature/hand-refit`)
+
+Les annotations du talk-show n'ont que les 17 points COCO : pas de vérité terrain pour les doigts. La référence est
+donc celle des meilleurs détecteurs 2D libres (`hand_reference.py`, 9 min pour la vidéo à 60 images/s) : RTMW-x
+(corps entier, 133 points) sur la personne, puis RTMPose-m main (21 points) sur un recadrage de chaque main. Environ
+40 % des points de main sont vus avec une confiance > 0,3 (mains sous la table ou hors champ ailleurs).
+
+`hand_refit.py` part des paramètres lissés et ne change que 76 angles (bras 16, poignets 6, doigts 54) pour que les
+21 points projetés de chaque main tombent sur RTMW (distance robuste Geman-McClure pondérée par la confiance), avec
+un rappel vers la pose lissée et un coût sur l'accélération du changement. Les points de main de MHR70 sont des
+articulations du squelette, qui ne dépend pas de la forme : le recalage tourne sans calculer le maillage.
+
+Pour ne pas se juger sur sa propre cible, le recalage vise RTMW et il est jugé sur le modèle de main, jamais vu :
+
+| Toute la vidéo, 60 images/s | Brut | Lissé (`sam3d_final`) | **Recalé (`sam3d_hands`)** |
+|---|---|---|---|
+| Erreur médiane au modèle de main (taille de main), P0 / P1 | 0,24 / 0,23 | 0,24 / 0,24 | **0,09 / 0,09** |
+| PCK@0,1 main, P0 / P1 | 0,15 / 0,14 | 0,13 / 0,12 | **0,52 / 0,54** |
+| Accélération p95 des points de main (taille de main), P0 / P1 | 0,62 / 0,77 | 0,018 / 0,022 | 0,023 / 0,032 |
+| Accélération p95 poignets (mm, `motion_diag`) | 61,9 | 1,8 | 2,5 |
+
+Le poids du terme temporel (5·10⁴) a été choisi sur les images 8900-9100 : 2·10⁴ colle plus aux détecteurs mais
+tremble deux fois plus, 10⁵ est aussi calme que le lissage mais moins juste. Le lissage seul ne rapprochait pas les
+mains de l'image (même erreur que le brut) : il retirait le bruit, pas l'erreur. Le retard sur les gestes rapides
+(image 8965) disparaît.
+
+Démo : `demo_side_by_side.mp4` (original | avatars sur le décor, 3840x1080, 60 images/s, son et sous-titres).
