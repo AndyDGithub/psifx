@@ -97,25 +97,36 @@ def torso_size(points: np.ndarray, weight: np.ndarray) -> np.ndarray:
     return np.maximum(np.interp(idx, idx[ok], size[ok]), 20).astype(np.float32)
 
 
+def moved_camera(cam_t: torch.Tensor, cam: torch.Tensor) -> torch.Tensor:
+    """cam_t changed by cam = (log depth factor, image shift x, y in focal units): scaling the translation moves the
+    person along the viewing ray (same place in the image, size divided by the factor), then the shift moves it
+    across the image at its new depth."""
+    t = cam_t * torch.exp(cam[:, :1])
+    return torch.cat([t[:, :2] + cam[:, 1:] * t[:, 2:], t[:, 2:]], 1)
+
+
 def fit_chunk(mhr, params, cam_t, focal, center, target, weight, size, link, tweight, free, prior_w, joints, local, args):
-    """Changes of the free angles for one chunk of consecutive samples. link[i]: sample i follows i-1."""
+    """Changes of the free angles (and of the camera, with --depth) for one chunk of consecutive samples.
+    link[i]: sample i follows i-1."""
     delta = torch.zeros(len(params), len(free), device=params.device, requires_grad=True)
-    optimizer = torch.optim.Adam([delta], lr=args.lr)
+    cam = torch.zeros(len(params), 3, device=params.device, requires_grad=True)
+    optimizer = torch.optim.Adam([delta, cam] if args.depth else [delta], lr=args.lr)
     accel_ok = (link[1:-1] & link[2:]).float() * tweight[1:-1]
     for _ in range(args.iterations):
         p = params.clone()
         p[:, free] = p[:, free] + delta
-        uv = project(attached(skeleton_state(mhr, p), joints, local), cam_t, focal, center)
+        uv = project(attached(skeleton_state(mhr, p), joints, local), moved_camera(cam_t, cam), focal, center)
         r2 = ((uv - target) ** 2).sum(-1) / size[:, None] ** 2
         data = (weight * r2 / (r2 + GM_SCALE ** 2)).sum() / len(params)
-        prior = (prior_w * delta ** 2).sum() / len(params)
+        prior = (prior_w * delta ** 2).sum() / len(params) + args.depth_prior * (cam ** 2).sum() / len(params)
         acc = delta[2:] - 2 * delta[1:-1] + delta[:-2]
-        temporal = ((acc ** 2).sum(1) * accel_ok).sum() / len(params)
+        cam_acc = cam[2:] - 2 * cam[1:-1] + cam[:-2]
+        temporal = (((acc ** 2).sum(1) + args.depth_temporal * (cam_acc ** 2).sum(1)) * accel_ok).sum() / len(params)
         loss = data + args.prior * prior + args.temporal * temporal
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-    return delta.detach()
+    return delta.detach(), cam.detach()
 
 
 def points_2d(mhr, mapping, a: dict, rows: np.ndarray, center: np.ndarray, device: str) -> np.ndarray:
@@ -157,6 +168,14 @@ def main():
                              "per frame, so the weight is kept per frame")
     parser.add_argument("--fast_speed", type=float, default=1.0,
                         help="2D speed (torsos per second) at which the temporal weight is halved")
+    parser.add_argument("--depth", action="store_true",
+                        help="also refit the depth and image position of the person (off by default: on the talk-show "
+                             "the avatar's head size already matches the image within 0.87-1.07 in every shot, the "
+                             "x2.35 close-up error measured before came from detector points invented out of the "
+                             "frame; refitting the depth kept OKS (0.843 vs 0.841) and tripled the jitter)")
+    parser.add_argument("--depth_prior", type=float, default=1.0, help="cost of a log depth change of 1")
+    parser.add_argument("--depth_temporal", type=float, default=10.0,
+                        help="extra weight of the camera's acceleration (depth jumps were the worst spikes)")
     parser.add_argument("--holdout", type=int, default=0, help="leave every K-th frame out of the fit, measure there")
     parser.add_argument("--iterations", type=int, default=300)
     parser.add_argument("--lr", type=float, default=0.02)
@@ -245,22 +264,26 @@ def main():
             local_all = rotate(q_inv, k0 - sj[..., :3]) / sj[..., 7:8]
             del k0, s0, sj, q_inv
             new = params.copy()
+            new_cam = a["cam_t"][rows].astype(np.float32).copy()
             breaks = np.r_[np.where(~link)[0], len(frames)]
             for b0, b1 in zip(breaks[:-1], breaks[1:]):
                 s = b0
                 while s < b1:
                     lo, hi = max(b0, s - 32), min(b1, s + args.chunk + 32)
                     t = lambda x: torch.from_numpy(np.ascontiguousarray(x[lo:hi])).float().to(dev)  # noqa: E731
-                    delta = fit_chunk(mhr, t(params), t(a["cam_t"][rows]), t(a["focal"][rows]),
+                    delta, cam = fit_chunk(mhr, t(params), t(a["cam_t"][rows]), t(a["focal"][rows]),
                                       torch.tensor(center, device=dev, dtype=torch.float32), t(target),
                                       t(fit_weight), t(size), torch.from_numpy(link[lo:hi]).to(dev), t(tweight),
                                       free, prior_w, joints, local_all[lo:hi], args)
                     keep_to = min(b1, s + args.chunk)
                     new[s:keep_to, free] += delta[s - lo:keep_to - lo].cpu().numpy()
+                    new_cam[s:keep_to] = moved_camera(t(a["cam_t"][rows]), cam)[s - lo:keep_to - lo].cpu().numpy()
                     s = keep_to
             a_out = dict(a)
             a_out["mhr_model_params"] = a["mhr_model_params"].copy()
             a_out["mhr_model_params"][rows] = new
+            a_out["cam_t"] = a["cam_t"].copy()
+            a_out["cam_t"][rows] = new_cam
             np.savez_compressed(out_dir / f"{person}.npz", **a_out)
             print(f"person {person}: fitted, {time.time() - start:.0f} s", flush=True)
 
