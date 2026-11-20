@@ -62,6 +62,9 @@ def main():
             sys.exit(f"error: track {t} has a frame twice: the folders overlap")
 
     chosen: dict[int, list] = {p: [] for p in range(people["people"])}
+    # First frame of every piece of each track: the frame after a piece is not taken if another piece starts there
+    # (a track cut at a jump of its mask, or a picture set aside, by people_from_tracks.py).
+    starts = {(str(q["track"]), int(q["frames"][0])) for q in people["assignment"]}
     for piece in people["assignment"]:
         if not isinstance(piece["person"], int):
             continue
@@ -71,7 +74,8 @@ def main():
         first, last = piece["frames"]
         frames = a["frames"].astype(int)
         # Up to the frame before the next one of the old stride 2 (odd frame after the last even one).
-        rows = np.where((frames >= first) & (frames <= last + 1) & (labels[frames] == labels[first]))[0]
+        end = last if (str(piece["track"]), last + 1) in starts else last + 1
+        rows = np.where((frames >= first) & (frames <= end) & (labels[frames] == labels[first]))[0]
         chosen[piece["person"]].append((str(piece["track"]), rows))
 
     out.mkdir(exist_ok=True)

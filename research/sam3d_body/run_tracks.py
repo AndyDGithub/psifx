@@ -60,11 +60,30 @@ def load_estimator(repo: Path, checkpoint: Path, device: str, fp32: bool = False
     return SAM3DBodyEstimator(sam_3d_body_model=model, model_cfg=cfg)
 
 
+def largest_part(mask: np.ndarray) -> np.ndarray:
+    """The largest connected part of a binary mask (all False if empty)."""
+    import cv2
+
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), connectivity=8)
+    if n <= 1:
+        return np.zeros_like(mask, dtype=bool)
+    return labels == 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+
+
 def mask_box(mask: np.ndarray, min_area: int):
-    ys, xs = np.nonzero(mask)
-    if len(xs) < min_area:
+    """Box of the largest connected part of the mask. SAM3 masks sometimes keep a thin strip on the image border
+    (or a second blob): the box of all pixels then spans from it to the person, and SAM 3D Body reads a body of
+    the wrong size (dance video: a full-size avatar made from a small inset figure and such a strip)."""
+    import cv2
+
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), connectivity=8)
+    if n <= 1:
         return None
-    return np.array([xs.min(), ys.min(), xs.max() + 1, ys.max() + 1], dtype=np.float32)
+    k = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    if stats[k, cv2.CC_STAT_AREA] < min_area:
+        return None
+    x, y, w, h = stats[k, :4]
+    return np.array([x, y, x + w, y + h], dtype=np.float32)
 
 
 def main():
@@ -115,7 +134,7 @@ def main():
                 continue
             boxes, prompts, who = [], [], []
             for person, mask in zip(people, masks):
-                binary = mask[..., 0] > 127
+                binary = largest_part(mask[..., 0] > 127)  # the mask prompt too, not only the box
                 box = mask_box(binary, args.min_area)
                 if box is not None:
                     boxes.append(box), prompts.append(binary), who.append(person)
