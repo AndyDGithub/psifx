@@ -5,7 +5,9 @@ There is no hand annotation on the talk-show (``pose_annotation`` has the 17 COC
 best open 2D detectors, run top-down on each person of the SAM 3D Body archives:
 
 1. **RTMW-x** (whole body, 133 COCO-WholeBody points, 70.2 mAP, the best open whole-body model) on the person box
-   (from the archive's upper-body keypoints);
+   (from the archive's upper-body keypoints), for the face and hands; when the legs reach below that box, RTMW runs
+   again on the whole-body box for the 23 body and feet points (``body[:, :23]``). Leg points read on the upper-body
+   crop are invented (the crop cuts them off): on a dance they were 0.7 torso away from the feet;
 2. **RTMPose-m hand** (21 points, trained on five hand datasets) on a square crop around each hand found at step 1:
    at 384x288 for the whole person, a hand is about 30 pixels wide, so step 2 reads it again at 256x256.
 
@@ -33,6 +35,9 @@ HAND = ("https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/"
 # MHR70 keypoints of the upper body (head, shoulders, elbows, hips, both hands): the person box. The legs are left
 # out, the model invents them under the table.
 UPPER = [*range(0, 11), *range(21, 63)]
+# MHR70 keypoints of the whole body (body, feet, hands): the box for the body and feet points.
+WHOLE = list(range(0, 63))
+BODY_FEET = slice(0, 23)  # COCO-WholeBody body (17) and feet (6)
 # COCO-WholeBody: left hand 91-111, right hand 112-132.
 HAND_SLICES = (slice(91, 112), slice(112, 133))
 # MHR70 hand keypoints of the person's left and right hand, used when RTMW does not see the hand.
@@ -106,6 +111,12 @@ def main():
             if box is not None:
                 k, s = body_model(image, bboxes=[box])
                 body, body_score = k[0], s[0]
+                whole = k2d[WHOLE][(k2d[WHOLE] >= 0).all(1) & (k2d[WHOLE, 0] < size[0]) & (k2d[WHOLE, 1] < size[1])]
+                full = box_of(whole, size, grow=1.2)
+                if full is not None and full[3] - full[1] > 1.15 * (box[3] - box[1]):
+                    k, s = body_model(image, bboxes=[full])  # the legs are in the image: read them on a crop with them
+                    body, body_score = body.copy(), body_score.copy()
+                    body[BODY_FEET], body_score[BODY_FEET] = k[0][BODY_FEET], s[0][BODY_FEET]
                 for side in (0, 1):
                     seen = body_score[HAND_SLICES[side]] > MIN_HAND_SCORE
                     points = body[HAND_SLICES[side]][seen] if seen.sum() >= 5 else k2d[list(MHR70_HANDS[side])]

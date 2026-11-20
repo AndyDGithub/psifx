@@ -34,7 +34,7 @@ import numpy as np
 import torch
 
 POSE, FIRST_ANGLE = 136, 3
-CUTOFF_HZ = {"root": 2.0, "torso_head": 3.0, "arms": 4.0, "wrists": 4.0, "fingers": 2.5, "legs": 2.0,
+CUTOFF_HZ = {"root": 2.0, "torso_head": 3.0, "arms": 4.0, "wrists": 4.0, "fingers": 2.5, "legs": 6.0,
              "image_xy": 3.0, "depth": 2.0}
 HAMPEL_S = {"depth": 0.6, "image_xy": 0.6, "root": 0.6}  # Window (s); the others use HAMPEL_DEFAULT_S.
 HAMPEL_DEFAULT_S, HAMPEL_K, HIDDEN_NOISE = 0.2, 5.0, 100.0
@@ -42,6 +42,8 @@ HAMPEL_DEFAULT_S, HAMPEL_K, HIDDEN_NOISE = 0.2, 5.0, 100.0
 # translations, log depth and image position (x/z) for the camera. A still person would otherwise have every
 # small movement flagged.
 ABS_FLOOR = {"angle": 0.12, "fingers": 0.2, "translation": 2.0, "depth": 0.08, "image_xy": 0.015}
+# Legs at 6 Hz (2 Hz before): on a dance, 2 Hz kept 0.69 of the feet amplitude, 6 Hz 0.86 (raw 0.87). Hidden
+# legs (under a table) are still held by their weak measure.
 # MHR70 keypoints of each part, per side (left, right): hands 42-62 / 21-41 (wrists 62 / 41).
 VISIBILITY_KEYPOINTS = {
     "legs": ([11, 13, 15, 16, 17], [12, 14, 18, 19, 20]),
@@ -172,13 +174,15 @@ def smooth_channels(x: np.ndarray, hidden: np.ndarray, cutoff_hz: np.ndarray, ha
 
 
 def robust(a: dict, segments: list[np.ndarray], rate: float, parts: list, hidden: dict | None,
-           scale: float = 1.0, depth_hz: float | None = None) -> tuple[dict, dict]:
-    """Locked body, then the robust smoother per run. hidden: part -> (n_samples, 2 sides) bool, or None."""
+           scale: float = 1.0, depth_hz: float | None = None, legs_hz: float | None = None) -> tuple[dict, dict]:
+    """Locked body, then the robust smoother per run. hidden: part -> (n_samples, 2 sides) bool, or None.
+    legs_hz: cut-off of the legs instead of CUTOFF_HZ["legs"] (times scale)."""
     b = {k: v.copy() for k, v in a.items()}
     b["shape_params"][:] = np.median(a["shape_params"], axis=0)
     b["mhr_model_params"][:, POSE:] = np.median(a["mhr_model_params"][:, POSE:], axis=0)
     position = {int(f): i for i, f in enumerate(a["frames"])}
-    pose_cutoff = np.array([CUTOFF_HZ[p] for p, _ in parts]) * scale
+    cutoffs = dict(CUTOFF_HZ, **({"legs": legs_hz} if legs_hz else {}))
+    pose_cutoff = np.array([cutoffs[p] for p, _ in parts]) * scale
     pose_hampel = np.array([HAMPEL_S.get(p, HAMPEL_DEFAULT_S) for p, _ in parts])
     pose_floor = np.array([ABS_FLOOR["translation"] if j < FIRST_ANGLE else
                            ABS_FLOOR["fingers" if p == "fingers" else "angle"] for j, (p, _) in enumerate(parts)])

@@ -3,7 +3,7 @@
 The robust smoother removes SAM 3D Body's spikes, but on fast moves (a dance, a quick gesture) it trails behind the
 image, and nothing brings the body back onto it: on the dance, the error to the 2D body grows from 0.86 to 0.94 torso
 on the fastest frames. This script moves the pose angles (root rotation, spine and head, arms, wrists, legs) so that
-the 17 projected COCO points of the avatar land on RTMW, with:
+the 17 projected COCO points and the 6 feet points (heels, big and small toes) of the avatar land on RTMW, with:
 
 - a **data term**: robust (Geman-McClure) distance in torso sizes, weighted by the confidence; points out of the
   picture or off the person's SAM3 mask do not count (``keypoint_view.py``);
@@ -13,9 +13,10 @@ the 17 projected COCO points of the avatar land on RTMW, with:
   second, from the 2D points).
 
 The points are SAM 3D Body's own MHR70 keypoints, the ones the annotations are compared to. Shoulders, wrists, hips
-and knees are skeleton joints; the face, elbows and ankles are mixes of mesh vertices. Each of these is attached to
-a joint (head, ``lowarm``, ``foot``) by its offset in the joint's frame, taken per frame on the starting pose: the
-fit then runs on the skeleton without skinning, as ``hand_refit.py`` (0.3 cm off after a 55 cm move of the elbow).
+and knees are skeleton joints; the face, elbows, ankles and feet are mixes of mesh vertices. Each point is attached
+to its nearest joint (median over the person's frames) by its offset in the joint's frame, taken per frame on the
+starting pose: the fit then runs on the skeleton without skinning, as ``hand_refit.py`` (0.3 cm off after a 55 cm
+move of the elbow). The feet points (heel, toes) tell where the foot points, hence a foot behind the other.
 Fitting bare joints instead, with the head free and no face target, let the head drift: OKS 0.816 -> 0.747 on the
 talk-show annotations although closer to RTMW. Run ``hand_refit.py`` afterwards on the output for the fingers.
 
@@ -43,11 +44,10 @@ from hand_refit import project  # noqa: E402
 from robust_smooth import parameter_parts  # noqa: E402
 from run_keyframes import cut_labels  # noqa: E402
 
-# COCO 0-16 -> MHR70 keypoint and the skeleton joint it is attached to.
-COCO = list(range(17))
-MHR70 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 62, 41, 9, 10, 11, 12, 13, 14]
-JOINTS = ["c_head"] * 5 + ["l_uparm", "r_uparm", "l_lowarm", "r_lowarm", "l_wrist", "r_wrist",
-                           "l_upleg", "r_upleg", "l_lowleg", "r_lowleg", "l_foot", "r_foot"]
+# COCO-WholeBody 0-22 (body, then left big toe, small toe, heel, right big toe, small toe, heel) -> MHR70 keypoint.
+COCO = list(range(23))
+MHR70 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 62, 41, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+SHOULDERS, HIPS = [COCO.index(5), COCO.index(6)], [COCO.index(11), COCO.index(12)]
 PRIOR = {"root": 8.0, "torso_head": 4.0, "arms": 1.0, "wrists": 1.0, "legs": 1.0}  # cost of a change of 1 rad
 GM_SCALE = 0.1  # Geman-McClure scale, in torso sizes
 
@@ -88,8 +88,8 @@ def keypoints_cm(mhr, mapping: torch.Tensor, a: dict, rows: np.ndarray, device: 
 
 def torso_size(points: np.ndarray, weight: np.ndarray) -> np.ndarray:
     """(n,) shoulder-hip distance from the 2D points, filled from neighbours where the torso is not seen."""
-    sh, hip = points[:, [0, 1]].mean(1), points[:, [6, 7]].mean(1)
-    ok = (weight[:, [0, 1, 6, 7]] > 0).all(1)
+    sh, hip = points[:, SHOULDERS].mean(1), points[:, HIPS].mean(1)
+    ok = (weight[:, SHOULDERS + HIPS] > 0).all(1)
     size = np.linalg.norm(sh - hip, axis=-1)
     if not ok.any():
         return np.full(len(points), 100.0, np.float32)
@@ -105,7 +105,8 @@ def moved_camera(cam_t: torch.Tensor, cam: torch.Tensor) -> torch.Tensor:
     return torch.cat([t[:, :2] + cam[:, 1:] * t[:, 2:], t[:, 2:]], 1)
 
 
-def fit_chunk(mhr, params, cam_t, focal, center, target, weight, size, link, tweight, free, prior_w, joints, local, args):
+def fit_chunk(mhr, params, cam_t, focal, center, target, weight, size, link, tweight, free, prior_w, temporal_w, joints,
+              local, args):
     """Changes of the free angles (and of the camera, with --depth) for one chunk of consecutive samples.
     link[i]: sample i follows i-1."""
     delta = torch.zeros(len(params), len(free), device=params.device, requires_grad=True)
@@ -121,8 +122,9 @@ def fit_chunk(mhr, params, cam_t, focal, center, target, weight, size, link, twe
         prior = (prior_w * delta ** 2).sum() / len(params) + args.depth_prior * (cam ** 2).sum() / len(params)
         acc = delta[2:] - 2 * delta[1:-1] + delta[:-2]
         cam_acc = cam[2:] - 2 * cam[1:-1] + cam[:-2]
-        temporal = (((acc ** 2).sum(1) + args.depth_temporal * (cam_acc ** 2).sum(1)) * accel_ok).sum() / len(params)
-        loss = data + args.prior * prior + args.temporal * temporal
+        temporal = (((temporal_w * acc ** 2).sum(1) + args.temporal * args.depth_temporal * (cam_acc ** 2).sum(1))
+                    * accel_ok).sum() / len(params)
+        loss = data + args.prior * prior + temporal
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -166,6 +168,9 @@ def main():
                              "jitter at 25 frames/s. Scaling it by (fps / 25)^4 for the same smoothness in seconds "
                              "made the fit too stiff to converge at 60 frames/s (OKS 0.70): the detector's noise is "
                              "per frame, so the weight is kept per frame")
+    parser.add_argument("--legs_temporal", type=float, default=5e3,
+                        help="temporal weight of the leg values (dance: 1e5 kept 0.87 of the feet amplitude, 5e3 0.92, "
+                             "for the same jitter of the feet)")
     parser.add_argument("--fast_speed", type=float, default=1.0,
                         help="2D speed (torsos per second) at which the temporal weight is halved")
     parser.add_argument("--depth", action="store_true",
@@ -210,10 +215,12 @@ def main():
     mapping = state["head_pose.keypoint_mapping"][MHR70].float().to(args.device)
     del state
     names = list(mhr.character_torch.skeleton.joint_names)
-    joints = [names.index(n) for n in JOINTS]
     parts = parameter_parts(mhr, args.device)
     free = [j for j, (part, _) in enumerate(parts) if part in args.parts]
     prior_w = torch.tensor([PRIOR[parts[j][0]] for j in free], device=args.device)
+    # Per value: the legs keep less of the smoother's calm, so foot taps and stomps keep their amplitude.
+    temporal_w = torch.tensor([args.legs_temporal if parts[j][0] == "legs" else args.temporal for j in free],
+                              device=args.device)
     print(f"{len(free)} free values: " + ", ".join(f"{p} {sum(parts[j][0] == p for j in free)}" for p in args.parts))
 
     report = {"args": {k: str(v) for k, v in vars(args).items()}, "people": {}}
@@ -259,6 +266,10 @@ def main():
             params = a["mhr_model_params"][rows].astype(np.float32).copy()
             # Offsets of the keypoints in their joints' frames, on the starting pose.
             k0, s0 = keypoints_cm(mhr, mapping, a, rows, dev)
+            # Each keypoint rides on its nearest joint (median over the frames): the most rigid attachment.
+            joints = torch.linalg.norm(k0[:, :, None] - s0[:, None, :, :3], dim=-1).median(0).values.argmin(1).tolist()
+            if person == sorted(p.stem for p in (d / args.params).glob("*.npz"))[0]:
+                print("joints:", ", ".join(f"{MHR70[i]}->{names[j]}" for i, j in enumerate(joints)), flush=True)
             sj = s0[:, joints]
             q_inv = torch.cat([-sj[..., 3:6], sj[..., 6:7]], -1)
             local_all = rotate(q_inv, k0 - sj[..., :3]) / sj[..., 7:8]
@@ -274,7 +285,7 @@ def main():
                     delta, cam = fit_chunk(mhr, t(params), t(a["cam_t"][rows]), t(a["focal"][rows]),
                                       torch.tensor(center, device=dev, dtype=torch.float32), t(target),
                                       t(fit_weight), t(size), torch.from_numpy(link[lo:hi]).to(dev), t(tweight),
-                                      free, prior_w, joints, local_all[lo:hi], args)
+                                      free, prior_w, temporal_w, joints, local_all[lo:hi], args)
                     keep_to = min(b1, s + args.chunk)
                     new[s:keep_to, free] += delta[s - lo:keep_to - lo].cpu().numpy()
                     new_cam[s:keep_to] = moved_camera(t(a["cam_t"][rows]), cam)[s - lo:keep_to - lo].cpu().numpy()

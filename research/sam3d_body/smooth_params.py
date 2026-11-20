@@ -230,12 +230,14 @@ def main():
         del raw_vertices
         for variant in ["raw"] + args.variants:
             if variant.startswith("robust"):
-                # robust[-novis][:scale[:depth cut-off in Hz]]
+                # robust[-novis][:scale[:depth cut-off in Hz[:legs cut-off in Hz]]]
                 fields = variant.split(":")
                 scale = float(fields[1]) if len(fields) > 1 else 1.0
-                depth_hz = float(fields[2]) if len(fields) > 2 else None
+                depth_hz = float(fields[2]) if len(fields) > 2 and fields[2] else None
+                legs_hz = float(fields[3]) if len(fields) > 3 else None  # robust:scale:depth:legs
                 b, stats = robust_smooth.robust(a, segments, rate, parts,
-                                                None if "novis" in variant else hidden[person], scale, depth_hz)
+                                                None if "novis" in variant else hidden[person], scale, depth_hz,
+                                                legs_hz)
                 report["robust_stats"][f"{person} {variant}"] = stats
             else:
                 b = a if variant == "raw" else smooth(a, segments, variant, rate)
