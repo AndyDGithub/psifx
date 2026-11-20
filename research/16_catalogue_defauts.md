@@ -218,3 +218,33 @@ invente des épaules et des poignets hors du cadre ou collés au bord.
 Recaler en plus la profondeur et la position (option `--depth`) ne change pas l'OKS (0,843) et triple le
 tremblement : l'option est laissée désactivée. Les changements de taille visibles dans le talk-show viennent donc
 du montage, pas de l'avatar.
+
+## 6. Danse humaine montée (V5, `v4_rat-danse_1.mp4`, 24 s, 30 im/s, 720x1280, 24 plans)
+
+La chaîne corrigée (`avatar_chain2.sh`) a tourné sur cette vidéo. La seconde vidéo fournie, `v4_danse_2.mp4`, ne
+montre pas de danseur mais un robot à roues : elle est en attente d'une autre vidéo.
+
+**Ce qui marche**
+- Les poses de la danseuse et du danseur sont suivies, y compris les plans serrés sur les jambes.
+- L'autocollant du rat dansant n'est pas pris pour une personne.
+- Le recalage du corps divise l'erreur 2D par 2,2 pour p0 (0,098 → 0,044 torse ; images rapides 0,23 → 0,10).
+- Le recalage des mains la divise aussi par 2,2 (0,22 → 0,10 taille de main).
+
+**Nouveaux défauts**
+
+| # | Défaut | Preuve | Prio |
+|---|---|---|---|
+| D23 | **Avatar fantôme** : à partir de l'image 365, SAM3 rattache à la piste de la danseuse le petit personnage de l'incrustation « TUTO YOUTUBE ». SAM 3D Body en fait un corps grandeur nature, posé sur le danseur | Masque 1, image 480 ; personne 1 sur les images rapides : 3,3 tailles de torse | **A** |
+| D24 | Les masques SAM3 gardent une bande parasite au bord de l'image, déjà vue sur le talk-show (les diagnostics prennent la plus grande composante, pas la chaîne) | Même masque | B |
+| D25 | Montage rapide : 24 plans en 24 s, dont 17 font moins d'1 s. Le fond ne se calcule qu'à partir d'1 s, donc 14 plans sur 24 restent gris | Log du rendu | B |
+| D26 | Pics de profondeur non retirés par le lissage (232/min) : ils viennent surtout de D23 | Lissage robuste | conséquence |
+| D27 | L'ancien environnement `psifx-env` fait planter MediaPipe (le processus est tué) sur cette vidéo ; `psifx-dev` passe | `logs/pose_mediapipe.log` | C |
+
+**Correctifs proposés**
+- **D23** : écarter les morceaux de piste situés dans une incrustation, c'est-à-dire un rectangle fixe à l'écran
+  dont le contenu ne suit pas le décor (même test que pour les logos de la mosaïque), ou dans les zones `--ignore`
+  données à la main. Ou bien couper une piste quand la taille de son masque change brutalement d'un facteur supérieur
+  à 3.
+- **D24** : ne garder, dans la chaîne elle-même, que la plus grande composante connexe du masque.
+- **D25** : pour un plan court, prendre le fond d'un autre plan de la même caméra, trouvé par les points du décor,
+  au lieu de le laisser gris.
