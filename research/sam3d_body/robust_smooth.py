@@ -224,6 +224,9 @@ def visibility(pipeline: Path, people: dict, archives: dict, margin: int = 10, r
     capture = cv2.VideoCapture(str(pipeline / "input.mp4"))
     width, height = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
     capture.release()
+    # Picture without the black bars of a letterboxed video: a point on a bar is out of the picture.
+    from keypoint_view import picture_area
+    left, top, right, bottom = picture_area(pipeline / "input.mp4")
     track_of = {person: {} for person in archives}  # person -> frame -> track
     for piece in people["assignment"]:
         person = str(piece["person"]) if isinstance(piece["person"], int) else None
@@ -256,7 +259,7 @@ def visibility(pipeline: Path, people: dict, archives: dict, margin: int = 10, r
                 uv = archives[person]["keypoints_2d"][i]
                 for k in keypoints:
                     u, v = int(round(uv[k, 0])), int(round(uv[k, 1]))
-                    if margin <= u < width - margin and margin <= v < height - margin:
+                    if left + margin <= u < right - margin and top + margin <= v < bottom - margin:
                         seen[person][i, k] = mask[max(0, v - reach):v + reach + 1, max(0, u - reach):u + reach + 1].any()
         process.stdout.close()
         process.wait()

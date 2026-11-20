@@ -6,7 +6,8 @@ angles of MHR so that the 21 projected points of each hand land on the 2D refere
 by frame, with:
 
 - a **data term**: robust (Geman-McClure) distance of each projected hand point to the reference, in hand sizes,
-  weighted by the detector's confidence (points under ``--min_score`` do not count);
+  weighted by the detector's confidence (points under ``--min_score`` do not count, nor points out of the picture
+  or off the person's SAM3 mask: detectors put hands out of the frame on its border, ``keypoint_view.py``);
 - a **prior**: the change from the smoothed angles costs, more for the arms than for the fingers, so a hand the
   detectors do not see stays where the smoother put it;
 - a **temporal term**: the acceleration of that change costs, so the detectors' own jitter is not copied.
@@ -37,6 +38,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from robust_smooth import parameter_parts  # noqa: E402
 from run_keyframes import cut_labels  # noqa: E402
+import keypoint_view  # noqa: E402
 
 POSE = 136
 # Skeleton joint of each MHR70 hand point in COCO-WholeBody hand order (wrist, then thumb, index, middle, ring, pinky
@@ -50,11 +52,16 @@ PRIOR = {"arms": 4.0, "wrists": 1.0, "fingers": 0.3}  # cost of a change of 1 ra
 GM_SCALE = 0.15  # Geman-McClure scale, in hand sizes: farther points count less and less (detector errors)
 
 
-def reference(ref: dict, source: str, min_score: float) -> tuple[np.ndarray, np.ndarray]:
-    """(n, 2 sides l/r, 21, 2) target points and (n, 2, 21) weights from the hand_reference.py archive."""
+def reference(ref: dict, source: str, min_score: float, view: dict | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """(n, 2 sides l/r, 21, 2) target points and (n, 2, 21) weights from the hand_reference.py archive.
+
+    ``view``: {"rtmw": (n, 2, 21) bool, "hand": (n, 2, 21) bool} from keypoint_view.in_view; points out of view
+    (out of the picture or off the person's mask) get a zero weight."""
     rtmw = np.stack([ref["body"][:, RTMW_HANDS[s]] for s in "lr"], 1)
     rtmw_w = np.stack([ref["body_score"][:, RTMW_HANDS[s]] for s in "lr"], 1)
     hand, hand_w = ref["hands"], ref["hand_score"]
+    if view is not None:
+        rtmw_w, hand_w = rtmw_w * view["rtmw"], hand_w * view["hand"]
     if source == "rtmw":
         points, weights = rtmw, rtmw_w
     elif source == "hand_only":
@@ -144,6 +151,9 @@ def main():
     parser.add_argument("--range", type=int, nargs=2, metavar=("FIRST", "LAST"))
     parser.add_argument("--parts", nargs="+", default=["arms", "wrists", "fingers"])
     parser.add_argument("--min_score", type=float, default=0.3)
+    parser.add_argument("--people", type=Path, help="people.json (default: <pipeline>/people.json), for the masks")
+    parser.add_argument("--no_view_filter", action="store_true",
+                        help="keep 2D points out of the picture or off the person's mask (old behaviour)")
     parser.add_argument("--prior", type=float, default=0.05)
     parser.add_argument("--temporal", type=float, default=5e4,
                         help="weight of the acceleration of the change (2e4: closer to the detectors, 1e5: as still as the smoother)")
@@ -161,6 +171,10 @@ def main():
             sys.exit(f"error: missing {path}")
     if args.output and (d / args.output).exists() and any((d / args.output).iterdir()):
         sys.exit(f"error: {d / args.output} is not empty")
+    people_path = args.people or d / "people.json"
+    if not args.no_view_filter and not people_path.is_file():
+        sys.exit(f"error: missing {people_path} (or pass --no_view_filter)")
+    people = json.loads(people_path.read_text()) if not args.no_view_filter else None
     import cv2
 
     capture = cv2.VideoCapture(str(d / "input.mp4"))
@@ -196,7 +210,15 @@ def main():
             rows = rows[keep]
         frames = a["frames"][rows].astype(int)
         size = np.maximum(ref["hand_box"] / 1.25, 20).astype(np.float32)  # hand crop side without rtmlib's margin
-        targets = {s: reference(ref, s, args.min_score) for s in ("hand", "rtmw", "hand_only")}
+        view = None
+        if not args.no_view_filter:
+            # Detectors place hands out of the frame on its border, with confidence: such points are not data.
+            n = len(frames)
+            rtmw_pts = np.stack([ref["body"][:, RTMW_HANDS[s]] for s in "lr"], 1).reshape(n, 42, 2)
+            both = keypoint_view.in_view(d, people, person, frames, np.concatenate([rtmw_pts, ref["hands"].reshape(n, 42, 2)], 1))
+            view = {"rtmw": both[:, :42].reshape(n, 2, 21), "hand": both[:, 42:].reshape(n, 2, 21)}
+            print(f"person {person}: {100 * (1 - view['rtmw'].mean()):.1f}% of RTMW hand points out of view", flush=True)
+        targets = {s: reference(ref, s, args.min_score, view) for s in ("hand", "rtmw", "hand_only")}
         target, weight = targets[args.source]
         link = np.r_[False, (np.diff(frames) == 1) & (labels[frames[1:]] == labels[frames[:-1]])]
 
