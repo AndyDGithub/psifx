@@ -31,7 +31,7 @@ gardé à part pour les mains. « Rapide » désigne les 10 % d'images où les p
 | Pics de mouvement par minute (brut → final) | 386 → 0 | 119 → 0 (profondeur) | 262 → 0,2 | **1367 → 293** |
 | Sauts d'orientation > 45° par image (brut → final) | — | 0 → 0 | 0 → 0 | **27 → 0** |
 | Visage lu par MediaPipe | — | 99,7 % | 87 % / **65 %** | **28 %** |
-| Fond : plans avec plaque | 49/118 | 1/1 (après seuils) | **0/1** | 1/1 |
+| Fond : plans avec plaque | 69/118 | 1/1 (après seuils) | **0/1** | 1/1 |
 
 ## 2. Défauts, classés par cause
 
@@ -102,7 +102,7 @@ Ce n'est pas un défaut de pose. Il est à documenter comme limite : MHR décrit
 | D16 | **Caméra mobile : fond gris sur toute la vidéo**. `decor_cameras` voit 21 coupes dans un plan unique (le panoramique ressemble à des coupes), il garde 2 morceaux qui commencent à 3,0 s et 36,6 s, et le rendu ne retrouve donc aucun début de plan | V2 | `decor_cameras.json`, `final_plate_own.log` | **A** pour V2 |
 | D17 | Une plaque fixe ne peut de toute façon pas représenter un panoramique : il faut une plaque par image (mosaïque recalée par homographie, ou inpainting vidéo de type ProPainter) | V2 | Principe | A (même cause) |
 | D18 | Halo et taches autour de l'avatar : le décor caché par la personne n'est jamais vu (12,9 % de V1) et l'inpainting OpenCV l'étale | V1, TS | Visuel | B |
-| D19 | Plans sans plaque fiable en gris (69/118) | TS | §8 de la note 15 | Secondaire (accepté) |
+| D19 | Plans sans plaque fiable en gris (49/118) | TS | §8 de la note 15 | Secondaire (accepté) |
 | D20 | Les seuils de plaque doivent être réglés à la main pour un plan unique (`--min_plate_inliers 0`) | V1, V4 | Log V1 | C |
 
 ### 2.7 Rendu et outils
