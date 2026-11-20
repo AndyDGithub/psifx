@@ -74,6 +74,36 @@ def plates_by_frame(labels: np.ndarray, fps: float, decor: Path, size: tuple[int
     return [by_shot[label] for label in labels], matched
 
 
+class MovingPlates:
+    """Background of the frames of moving shots, cut out of the mosaics of decor_cameras.py."""
+
+    def __init__(self, decor: Path, size: tuple[int, int]):
+        report = json.loads((decor / "decor_cameras.json").read_text())
+        self.size, self.runs = size, []
+        for entry in report.get("moving_shots", []):
+            k = entry["mosaic"]
+            mosaic, data = cv2.imread(str(decor / f"mosaic_{k}.jpg")), decor / f"mosaic_{k}.npz"
+            if mosaic is None or not data.is_file():
+                sys.exit(f"error: missing mosaic_{k}.jpg or mosaic_{k}.npz in {decor}")
+            with np.load(data) as z:
+                times, to_mosaic, small = z["times_s"], z["to_mosaic"].astype(np.float64), z["frame_size"]
+            unseen = (mosaic.max(axis=2) < 8).astype(np.uint8)  # Never seen: stored black.
+            mosaic = cv2.inpaint(mosaic, unseen, 5, cv2.INPAINT_TELEA)
+            # Frame pixels (full size) -> pixels of the frame size the mosaic was built at.
+            scale = np.diag([small[0] / size[0], small[1] / size[1], 1.0])
+            self.runs.append((times, to_mosaic, scale, mosaic))
+
+    def __call__(self, t: float) -> np.ndarray | None:
+        for times, to_mosaic, scale, mosaic in self.runs:
+            if times[0] <= t <= times[-1]:
+                # Homography at t: linear between the two sampled times around it (small moves in 0.2 s).
+                j = min(int(np.searchsorted(times, t, side="right")) - 1, len(times) - 2)
+                w = (t - times[j]) / (times[j + 1] - times[j]) if len(times) > 1 else 0.0
+                h = to_mosaic[j] + w * (to_mosaic[min(j + 1, len(times) - 1)] - to_mosaic[j])
+                return cv2.warpPerspective(mosaic, h @ scale, self.size, flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR)
+        return None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("pipeline", type=Path, help="folder with input.mp4, subtitles.ass and the archives")
@@ -132,6 +162,8 @@ def main():
         plates, matched = plates_by_frame(labels, fps, d / args.decor, (width, height),
                                           args.min_plate_shots, args.min_plate_inliers)
         print(f"{matched} of {labels[-1] + 1} shots have a plate; the others are grey", flush=True)
+        moving_plates = MovingPlates(d / args.decor, (width, height))
+        print(f"{len(moving_plates.runs)} moving shots get their background from a mosaic", flush=True)
     # Row of each person's archive to draw on each frame (-1: none), held until its next computed frame, never
     # across a cut; weight of the next row for the interpolation (0 where the next row is too far or in another
     # shot).
@@ -168,6 +200,8 @@ def main():
     def render(i: int, frame: np.ndarray) -> np.ndarray:
         if args.background == "original":
             image = frame.copy()
+        elif args.background == "plate" and (moving := moving_plates(i / fps)) is not None:
+            image = moving
         elif plates[i] is not None:
             image = plates[i].copy()
         else:
