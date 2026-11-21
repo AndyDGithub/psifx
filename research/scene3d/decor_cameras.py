@@ -81,6 +81,13 @@ def main():
     parser.add_argument("--plate_samples", type=int, default=60, help="frames per camera group for its plate")
     parser.add_argument("--moving_shift", type=float, default=30,
                         help="largest move of the image center in a shot (px at 960 wide) above which it is a moving shot")
+    parser.add_argument("--plate_min_seen", type=float, default=0.1,
+                        help="share of a group's samples a plate pixel must be seen in, else the renderer fills it")
+    parser.add_argument("--overlay_level", type=float, default=10, help="gray difference of a still overlay pixel")
+    parser.add_argument("--overlay_share", type=float, default=0.8, help="share of the shots where it stays still")
+    parser.add_argument("--overlay_max_area", type=float, default=0.2,
+                        help="larger still area: a single camera, not an overlay; the mask is dropped")
+    parser.add_argument("--keep_overlays", action="store_true", help="match shots on the overlays too (old way)")
     parser.add_argument("--output", type=Path, default=None, help="default: out_dir/decor_cameras")
     args = parser.parse_args()
 
@@ -131,6 +138,20 @@ def main():
     cuts = [0, *cuts_found, count]
     shots = [(a, b) for a, b in zip(cuts, cuts[1:]) if b - a >= FPS]  # Under 1 s: fades and flashes.
     middles = [(a + b) // 2 for a, b in shots]
+    # Overlays (channel logos, captions) stay at the same place on the screen whatever the camera: their keypoints
+    # match between shots of different cameras and join them (an inserted video then gets the studio's plate). A
+    # pixel that keeps its gray level in most shots is such an overlay. With a single camera the whole decor is
+    # constant: the mask is then dropped (it would leave no decor), and nothing can be joined wrongly anyway.
+    screen_overlay = np.zeros((H, W), bool)
+    if not args.keep_overlays and len(middles) >= 4:
+        stack = gray[middles].astype(np.int16)
+        steady = (np.abs(stack - np.median(stack, axis=0)) < args.overlay_level).mean(axis=0) >= args.overlay_share
+        steady = cv2.dilate(steady.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
+        if steady.mean() <= args.overlay_max_area:
+            screen_overlay = steady
+            not_ignored &= ~screen_overlay
+    print(f"overlay (still in {args.overlay_share:.0%} of the shots): {screen_overlay.mean():.1%} of the picture left out",
+          flush=True)
     features = [decor_features(m) for m in middles]
 
     n = len(shots)
@@ -199,9 +220,10 @@ def main():
         for f in np.linspace(run["start"], run["end"] - 1, min(args.plate_samples, run["end"] - run["start"])).astype(int):
             moving_wanted[int(f)] = k
 
-    # Second pass in color, only on the frames of the plates, evenly taken inside each large group.
+    # Second pass in color, only on the frames of the plates, evenly taken inside each group (all of them: a short
+    # inserted video is a camera of its own and needs its plate too; samples in float16 to hold them all).
     wanted: dict[int, int] = {}
-    for g, group in enumerate(ordered[:8]):
+    for g, group in enumerate(ordered):
         pool = [f for i in group for f in range(*shots[i])]
         for f in np.array(pool)[np.linspace(0, len(pool) - 1, min(args.plate_samples, len(pool))).astype(int)]:
             wanted[int(f)] = g
@@ -212,7 +234,7 @@ def main():
             hidden = cv2.dilate(people[f].astype(np.uint8), kernel) > 0
             moving_samples.setdefault(moving_wanted[f], []).append((f, image.copy(), hidden))
         if f in wanted:
-            sample = image.astype(np.float32)
+            sample = image.astype(np.float16)  # Exact for 0-255.
             sample[cv2.dilate(people[f].astype(np.uint8), kernel) > 0] = np.nan
             stacks.setdefault(wanted[f], []).append(sample)
 
@@ -224,10 +246,15 @@ def main():
                  "inliers_median": float(np.median([inliers[p] for p in pairs])) if pairs else None,
                  "shift_px_median": float(np.median([shifts[p] for p in pairs])) if pairs else None}
         if g in stacks:
-            samples = np.stack(stacks.pop(g))
+            samples = np.stack(stacks.pop(g)).astype(np.float32)
             seen = np.isfinite(samples[..., 0]).sum(axis=0)
             plate = np.nan_to_num(np.nanmedian(samples, axis=0))  # Never-seen pixels stay black.
             cv2.imwrite(str(output / f"plate_{g}.jpg"), plate.astype(np.uint8))
+            # Pixels seen in too few samples: their median is a missed piece of a person (colored stains where the
+            # guests always sit). Kept apart from the plate's black, which can be real (black bars of an inserted
+            # video), so that the renderer fills only these.
+            rare = seen < max(3, args.plate_min_seen * len(samples))
+            cv2.imwrite(str(output / f"unseen_{g}.png"), rare.astype(np.uint8) * 255)
             entry["plate_unseen_share"] = float((seen < 3).mean())
         report.append(entry)
 
@@ -294,7 +321,8 @@ def main():
     summary = {"shots": n, "cuts": len(cuts) - 2, "cuts_at_5fps_old_rule": len(candidates),
                "moving_shots": moving_report, "groups": len(ordered), "keypoints_per_shot_p10_p50_p90":
                np.percentile([len(f[0]) for f in features], [10, 50, 90]).astype(int).tolist(),
-               "links_between_groups": links[:20], "cameras": report}
+               "links_between_groups": links[:20], "cameras": report,
+               "screen_overlay_share": round(float(screen_overlay.mean()), 3)}
     (output / "decor_cameras.json").write_text(json.dumps(summary, indent=2))
     print({k: summary[k] for k in ("shots", "cuts", "cuts_at_5fps_old_rule", "groups",
                                     "keypoints_per_shot_p10_p50_p90")})

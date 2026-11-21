@@ -62,7 +62,11 @@ def plates_by_frame(labels: np.ndarray, fps: float, decor: Path, size: tuple[int
         path = decor / f"plate_{g}.jpg"
         if path.is_file():
             plate = cv2.imread(str(path))
-            unseen = (plate.max(axis=2) < 8).astype(np.uint8)  # Never seen: stored black.
+            mask = cv2.imread(str(decor / f"unseen_{g}.png"), cv2.IMREAD_GRAYSCALE)
+            if mask is not None and mask.shape == plate.shape[:2]:
+                unseen = (mask > 127).astype(np.uint8)  # Seen too rarely (decor_cameras.py); real black is kept.
+            else:
+                unseen = (plate.max(axis=2) < 8).astype(np.uint8)  # Older decor folders: never seen = stored black.
             images[g] = cv2.resize(cv2.inpaint(plate, unseen, 5, cv2.INPAINT_TELEA), size)
     first = np.r_[0, np.where(np.diff(labels))[0] + 1]  # First frame of each shot.
     by_shot, matched = {}, 0
