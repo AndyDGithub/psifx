@@ -438,17 +438,36 @@ OKS du talk-show (200 images annotées) :
 - après le recalage du corps : 0,845 → **0,847** (PCK@0,05 0,796 → 0,806) ;
 - après le recalage des mains : 0,835 → 0,838.
 
-Le talk-show change aussi de structure : les images 5916–6248 et 6444–6668 sont une publicité insérée, avec un
-autre homme. L'ancienne méthode les donnait à l'animateur ; elles forment maintenant une personne 2 (jaune).
-L'image 646, une affiche, passe en « other ».
+Le talk-show change aussi de structure. Les images 5916–6248 et 6444–6668 montrent l'explicateur des battles
+d'aura, filmé hors du studio, devant un mur blanc. L'ancienne méthode les donnait à l'animateur ; elles forment
+maintenant une personne 2, en jaune. L'image 646, une affiche, passe en « other ».
 
 ### 9.3 Ce qui reste
 
 - L'image du flash de V5 (291) : 110–150 px d'erreur.
 - Le genou de l'homme pendant le saut, loin du bord : seul RTMW le guide.
-- La publicité du talk-show reçoit un avatar. C'est une vidéo insérée : faut-il l'exclure comme les personnes
-  hors scène ?
 - Le recalage des mains coûte encore 0,01 d'OKS.
+
+### 9.4 L'explicateur du talk-show : son fond et sa voix (retour de l'auteur)
+
+La scène, c'est la vidéo elle-même : toute personne filmée a son avatar et son propre fond, même dans un passage
+inséré. Seuls l'encart de V5 et les affiches restent exclus.
+
+| # | Défaut | Cause | Correction |
+|---|---|---|---|
+| 1 | L'explicateur apparaît devant le décor du studio au lieu de son mur blanc | `decor_cameras.py` rangeait ses plans avec ceux du plan large, parce que les logos (« SMALL TALK », Konbini), toujours au même endroit, suffisaient à faire correspondre les plans. L'ancien groupe 0 réunissait 53 plans avec une médiane de 126 points communs. | On exclut de la correspondance les pixels immobiles dans au moins 80 % des plans (2 % de l'image). Si cette zone dépasse 20 % de l'image, la vidéo n'a qu'une caméra et l'exclusion est abandonnée. Chaque groupe de caméra a désormais son fond, plus seulement les 8 plus grands. Les pixels vus dans moins de 10 % des échantillons sont enregistrés à part (`unseen_<g>.png`), pour que le rendu ne bouche que ceux-là et garde le noir réel, comme les bandes d'une vidéo verticale. |
+| 2 | Sous-titres de l'explicateur marqués « off 1 » | Le lien voix–visage (Light-ASD) donnait sa voix à l'ancienne personne 0, qu'il partageait avec l'animateur. Sa voix ne ressemblait pas à celle de l'animateur, donc elle avait été rejetée vers « hors champ ». | La chaîne des locuteurs (`speakers.py`) est relancée avec la nouvelle `people.json`, et sa voix va à la personne 2. |
+
+Résultats :
+- Talk-show : 22 groupes de caméras au lieu de 12, avec jusqu'à 1 026 points communs. Les vrais plans du studio se séparent par caméra.
+- Talk-show : 68 plans sur 115 ont un fond, contre 64.
+- Explicateur : il est rendu sur son mur blanc, avec ses sous-titres « P2 » en jaune.
+- Sous-titres : 92,1 % des mots vont à la bonne personne, comme avant. L'explicateur est maintenant nommé P2 au lieu de « off 1 ».
+- V5, V6, AVA et V1 gardent le même nombre de plans avec un fond.
+
+Ce qui reste :
+- Deux lignes sont encore attribuées à P2 : « C'est combien de points d'aura ça ? » (une personne derrière la caméra) et « Je crois que je serais fort » (l'animateur). La diarisation les met dans le même groupe de voix que l'explicateur.
+- Sur le fond du plan large, aux places des invités, le décor n'est visible que pendant la transition du logo. Ces pixels gardent ses couleurs. Ils sont presque toujours cachés par les avatars.
 
 Sources :
 - Oquab et al., *DINOv2: Learning Robust Visual Features without Supervision* (2023) : https://arxiv.org/abs/2304.07193
