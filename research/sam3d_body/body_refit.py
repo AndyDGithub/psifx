@@ -161,6 +161,11 @@ def fit_chunk(mhr, params, cam_t, focal, center, target, weight, size, link, twe
     accel_ok = (link[1:-1] & link[2:]).float()[:, None] * tweight[1:-1]  # (n-2, free values)
     for it in range(args.iterations):
         gm = gm_scale(it, args)
+        # Cosine decay of the step to 1 %: at a constant step Adam hovers around the optimum, frame by frame
+        # differently (V1: the avatar's face shook 5x more than RTMW's at 600 iterations, 1.4x at 300).
+        if args.lr_decay:
+            for group in optimizer.param_groups:
+                group["lr"] = args.lr * (0.01 + 0.99 * 0.5 * (1 + np.cos(np.pi * it / args.iterations)))
         p = params.clone()
         p[:, free] = p[:, free] + delta
         uv = project(attached(skeleton_state(mhr, p), joints, local), moved_camera(cam_t, cam), focal, center)
@@ -230,6 +235,8 @@ def main():
     parser.add_argument("--frames", type=int, nargs=2, help="first and last frame to fit (a test on an extract)")
     parser.add_argument("--repeat_level", type=float, default=0.15,
                         help="mean gray difference under which a frame repeats the previous one (0: off)")
+    parser.add_argument("--no_lr_decay", dest="lr_decay", action="store_false",
+                        help="constant learning rate (before: Adam hovered around the optimum)")
     parser.add_argument("--part_speed", choices=("max", "median", "off"), default="max",
                         help="speed that relaxes each limb's temporal term: its fastest or median point, or off (the "
                              "body median for every value, as before)")
@@ -247,7 +254,7 @@ def main():
     parser.add_argument("--depth_temporal", type=float, default=10.0,
                         help="extra weight of the camera's acceleration (depth jumps were the worst spikes)")
     parser.add_argument("--holdout", type=int, default=0, help="leave every K-th frame out of the fit, measure there")
-    parser.add_argument("--iterations", type=int, default=300)
+    parser.add_argument("--iterations", type=int, default=600)
     parser.add_argument("--lr", type=float, default=0.02)
     parser.add_argument("--chunk", type=int, default=512)
     parser.add_argument("--cut", type=float, default=18)
