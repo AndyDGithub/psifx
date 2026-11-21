@@ -389,3 +389,71 @@ Sources :
   https://arxiv.org/pdf/1909.08605
 - SMPLify, terme 2D Geman-McClure : https://arxiv.org/html/1607.08128
 - PySceneDetect, AdaptiveDetector : https://www.scenedetect.com/docs/api.html
+
+## 9. Ré-identification entre plans et personne au bord du cadre (2026-11-21, retour de l'auteur sur V5 entre 9 et 10 s)
+
+Retour de l'auteur :
+- juste avant la coupe vers la danseuse, l'homme sort du cadre et son avatar prend une pose étrange ;
+- au plan de la poussée, la danseuse (verte) apparaît jaune et l'homme (rouge) vert ;
+- pendant la poussée, des erreurs restent sur la jambe de l'homme qui saute, et la danseuse tombe au lieu de sortir du cadre ;
+- au flash, la danseuse reste jaune et son avatar tombe au sol.
+
+La ré-identification est le défaut principal. Branche `fix/reid-shots` (sur `fix/fast-motion`, worktree
+`.worktrees/moving-plate`), commit `1148a47`.
+
+### 9.1 Causes et corrections
+
+| # | Cause | Correction |
+|---|---|---|
+| 1 | `people.json` rattachait les pièces de pistes SAM3 aux personnes par les couleurs du masque et la forme du corps. Or l'éclairage change d'un plan à l'autre, et la forme est faussée en gros plan. | `reid_people.py` : chaque pièce est décrite par des vecteurs DINOv2-small, tirés de 12 images, sur deux recadrages : le corps (masque SAM3, fond gris) et la tête (points 0–4 de SAM 3D Body, 2,2 × leur étendue). La similarité entre deux pièces est la moyenne symétrique des meilleures correspondances cosinus. Le regroupement se fait à liaison moyenne, en interdisant de fusionner deux groupes présents sur une même image ; seuil 0,55, ou `--people N`. Une pièce de moins de 5 images prend la personne de sa voisine de même piste, sinon le groupe le plus proche, sinon « other ». La méthode hongroise garde les numéros, donc les couleurs. |
+| 2 | Pour la référence 2D, RTMW lisait le recadrage d'une personne qui contient aussi l'autre : pendant la poussée, la jambe du voisin pouvait être prise. | Les pixels des masques des autres personnes, hors du masque propre dilaté de 6 px, passent en gris avant RTMW (`hand_reference --people`). Dans les filtres de visibilité (`keypoint_view`, `robust_smooth`), un point posé sur le masque d'une autre personne est rejeté et ne compte pas dans la couverture qui sert à juger un masque partiel. |
+| 3 | Personne qui sort du cadre : sans points vus, seul l'a priori tient l'avatar, qui se couche ou lève le bras. Rien n'interdit au corps de dépasser du masque. | Terme de silhouette dans `body_refit`, appliqué seulement aux images où le masque touche le bord (8 px) et n'est pas partiel. Les 23 points et les milieux des segments de membres doivent tomber sur un masque SAM3 (dilaté) ou hors du cadre. Coût : (distance / torse)² × 100, lu sur une carte de distance à 1/4. Sur ces images, le décalage de l'avatar dans l'image devient libre. Ailleurs, pas de terme, car une jambe sous une table n'est pas absente. |
+
+Les autres méthodes ont échoué. Entre les deux danseurs de V5, les couleurs et la forme du corps ne séparaient
+rien. SigLIP2 était plus ambigu que DINOv2. La tête apporte l'invariance au changement de vêtements et
+d'éclairage (2403.02892). Les modèles de ré-identification entraînés (CLIP-ReID, SOLIDER) sont faits pour des
+caméras de surveillance, pas pour des plans de montage (2601.20598).
+
+### 9.2 Résultats
+
+**V5**
+- 6 pièces changent de personne : l'homme reste rouge et la danseuse verte, avant et après le flash.
+- Plus de bras levé quand l'homme sort (images 276–280), plus d'avatar couché pour la danseuse (300–308). Il
+  reste une petite main verte au bord, aux images 304–305, faute de référence RTMW.
+- Poussée (images 284–290), erreur de la cheville de l'homme après recalage : jusqu'à 198 px avant, 3 à 44 px
+  après. Le genou droit des images 287–288 est trop loin du bord pour le terme de silhouette. L'image du flash
+  (291) reste à 110–150 px.
+
+**Toutes les vidéos** (recalage du corps : erreur médiane en torse et accélération 2D au 95e centile)
+
+| Vidéo | Erreur avant → après | Accélération avant → après |
+|---|---|---|
+| V5, homme / danseuse | 0,0174 / 0,0246 → 0,0147 / 0,024 | — |
+| V6 | 0,0167 → 0,0167 (jamais au bord) | inchangée |
+| AVA | 0,0172 / 0,0275 → 0,0165 / 0,024 | 0,012 / 0,024 → 0,011 / 0,022 |
+| V1 | 0,0127 → 0,0116 (24 697 points utiles contre 22 194) | 0,0118 → 0,0132 |
+| Talk-show, animateur / invité | 0,0200 / 0,0216 → 0,0193 / 0,0221 | 0,0064 / 0,0086 → 0,0067 / 0,0090 |
+
+OKS du talk-show (200 images annotées) :
+- après le recalage du corps : 0,845 → **0,847** (PCK@0,05 0,796 → 0,806) ;
+- après le recalage des mains : 0,835 → 0,838.
+
+Le talk-show change aussi de structure : les images 5916–6248 et 6444–6668 sont une publicité insérée, avec un
+autre homme. L'ancienne méthode les donnait à l'animateur ; elles forment maintenant une personne 2 (jaune).
+L'image 646, une affiche, passe en « other ».
+
+### 9.3 Ce qui reste
+
+- L'image du flash de V5 (291) : 110–150 px d'erreur.
+- Le genou de l'homme pendant le saut, loin du bord : seul RTMW le guide.
+- La publicité du talk-show reçoit un avatar. C'est une vidéo insérée : faut-il l'exclure comme les personnes
+  hors scène ?
+- Le recalage des mains coûte encore 0,01 d'OKS.
+
+Sources :
+- Oquab et al., *DINOv2: Learning Robust Visual Features without Supervision* (2023) : https://arxiv.org/abs/2304.07193
+- Ré-identification à long terme avec un flux tête : https://arxiv.org/abs/2403.02892
+- *Person Re-ID in 2025: Supervised, Self-Supervised, and Language-Aligned. What Works?* (2026) : https://arxiv.org/pdf/2601.20598
+- SapiensID, reconnaissance unifiée visage et corps (CVPR 2025) : https://openaccess.thecvf.com/CVPR2025
+- CLIP-FGDI, ré-identification généralisable avec CLIP (2025) : https://arxiv.org/abs/2501.16065
+- MUVA, alignement vision-langage multi-granularité pour la ré-identification (2026) : https://arxiv.org/abs/2603.14012
