@@ -220,9 +220,14 @@ def robust(a: dict, segments: list[np.ndarray], rate: float, parts: list, hidden
     return b, stats
 
 
-def visibility(pipeline: Path, people: dict, archives: dict, margin: int = 10, reach: int = 12) -> dict:
+def visibility(pipeline: Path, people: dict, archives: dict, margin: int = 10, reach: int = 12,
+               references: dict | None = None, cover_min: float = 0.7, cover_score: float = 3.0) -> dict:
     """Per person: part -> (n_samples, 2) bool, True where the part is hidden (keypoints off the image or off
-    the person's SAM3 mask). The track of each sample comes from people.json (the pieces given to that person)."""
+    the person's SAM3 mask). The track of each sample comes from people.json (the pieces given to that person).
+
+    references: person -> RTMW reference (frames, body, body_score) of hand_reference.py. A frame whose mask holds
+    less than cover_min of RTMW's confident body points is a partial mask (SAM3 kept only the sweater): its parts
+    are judged on the picture only, else legs seen plainly are called hidden and frozen by the smoother."""
     import cv2
 
     capture = cv2.VideoCapture(str(pipeline / "input.mp4"))
@@ -245,6 +250,9 @@ def visibility(pipeline: Path, people: dict, archives: dict, margin: int = 10, r
                 needed.setdefault(track, {}).setdefault(int(f), []).append((person, i))
     keypoints = sorted({k for sides in VISIBILITY_KEYPOINTS.values() for side in sides for k in side})
     seen = {person: np.zeros((len(a["frames"]), 70), bool) for person, a in archives.items()}
+    references = references or {}
+    ref_row = {person: {int(f): r for r, f in enumerate(ref["frames"])} for person, ref in references.items()}
+    partial_frames = {person: 0 for person in archives}
     for track, frames in needed.items():
         path = pipeline / "masks" / f"{track}.mp4"
         if not path.is_file():
@@ -259,15 +267,29 @@ def visibility(pipeline: Path, people: dict, archives: dict, margin: int = 10, r
             if f not in frames:
                 continue
             mask = np.frombuffer(buffer, np.uint8).reshape(height, width) > 127
+            near = lambda u, v: mask[max(0, v - reach):v + reach + 1, max(0, u - reach):u + reach + 1].any()  # noqa: E731
             for person, i in frames[f]:
+                partial = False
+                r = ref_row.get(person, {}).get(f)
+                if r is not None:
+                    pts, sc = references[person]["body"][r, :23], references[person]["body_score"][r, :23]
+                    ok = (sc > cover_score) & (pts[:, 0] >= left) & (pts[:, 0] < right) & (pts[:, 1] >= top) & \
+                        (pts[:, 1] < bottom)
+                    if ok.sum() >= 5:
+                        inside = [near(int(round(x)), int(round(y))) for x, y in pts[ok]]
+                        partial = np.mean(inside) < cover_min
+                        partial_frames[person] += int(partial)
                 uv = archives[person]["keypoints_2d"][i]
                 for k in keypoints:
                     u, v = int(round(uv[k, 0])), int(round(uv[k, 1]))
                     if left + margin <= u < right - margin and top + margin <= v < bottom - margin:
-                        seen[person][i, k] = mask[max(0, v - reach):v + reach + 1, max(0, u - reach):u + reach + 1].any()
+                        seen[person][i, k] = partial or near(u, v)
         process.stdout.close()
         process.wait()
     out = {}
+    for person, n in partial_frames.items():
+        if references:
+            print(f"person {person}: {n} frames with a partial mask, judged on the picture only", flush=True)
     for person, s in seen.items():
         out[person] = {part: np.stack([s[:, sides[0]].mean(1) < 0.5, s[:, sides[1]].mean(1) < 0.5], axis=1)
                        for part, sides in VISIBILITY_KEYPOINTS.items()}

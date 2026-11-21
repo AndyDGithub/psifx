@@ -49,6 +49,9 @@ COCO = list(range(23))
 MHR70 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 62, 41, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 SHOULDERS, HIPS = [COCO.index(5), COCO.index(6)], [COCO.index(11), COCO.index(12)]
 PRIOR = {"root": 8.0, "torso_head": 4.0, "arms": 1.0, "wrists": 1.0, "legs": 1.0}  # cost of a change of 1 rad
+# COCO points that tell how fast each limb moves (knees, ankles, feet; elbows, wrists).
+LEG_POINTS = [COCO.index(k) for k in (13, 14, 15, 16, 17, 18, 19, 20, 21, 22)]
+ARM_POINTS = [COCO.index(k) for k in (7, 8, 9, 10)]
 GM_SCALE = 0.1  # Geman-McClure scale, in torso sizes
 
 
@@ -105,6 +108,18 @@ def moved_camera(cam_t: torch.Tensor, cam: torch.Tensor) -> torch.Tensor:
     return torch.cat([t[:, :2] + cam[:, 1:] * t[:, 2:], t[:, 2:]], 1)
 
 
+def gm_scale(it: int, args) -> float:
+    """Geman-McClure scale at iteration it (graduated non-convexity): from --gm_start torsos, divided by 1.4 per
+    step, down to GM_SCALE by 60 % of the iterations, then held. A fixed 0.1 torso gives a point 0.4 torso away 4 %
+    of the pull of a near one: a stamp or a sharp arm move that the smoother rounded off was taken for an outlier
+    and never brought back."""
+    if args.gm_start <= GM_SCALE:
+        return GM_SCALE
+    steps = int(np.ceil(np.log(args.gm_start / GM_SCALE) / np.log(1.4)))
+    k = min(steps, int(it / max(1, 0.6 * args.iterations) * (steps + 1)))
+    return max(GM_SCALE, args.gm_start / 1.4 ** k)
+
+
 def fit_chunk(mhr, params, cam_t, focal, center, target, weight, size, link, tweight, free, prior_w, temporal_w, joints,
               local, args):
     """Changes of the free angles (and of the camera, with --depth) for one chunk of consecutive samples.
@@ -112,18 +127,21 @@ def fit_chunk(mhr, params, cam_t, focal, center, target, weight, size, link, twe
     delta = torch.zeros(len(params), len(free), device=params.device, requires_grad=True)
     cam = torch.zeros(len(params), 3, device=params.device, requires_grad=True)
     optimizer = torch.optim.Adam([delta, cam] if args.depth else [delta], lr=args.lr)
-    accel_ok = (link[1:-1] & link[2:]).float() * tweight[1:-1]
-    for _ in range(args.iterations):
+    accel_ok = (link[1:-1] & link[2:]).float()[:, None] * tweight[1:-1]  # (n-2, free values)
+    for it in range(args.iterations):
+        gm = gm_scale(it, args)
         p = params.clone()
         p[:, free] = p[:, free] + delta
         uv = project(attached(skeleton_state(mhr, p), joints, local), moved_camera(cam_t, cam), focal, center)
         r2 = ((uv - target) ** 2).sum(-1) / size[:, None] ** 2
-        data = (weight * r2 / (r2 + GM_SCALE ** 2)).sum() / len(params)
+        # sigma^2 r^2 / (sigma^2 + r^2), divided by GM_SCALE^2: quadratic near 0 whatever sigma (SMPLify's form), and
+        # the former r^2 / (r^2 + GM_SCALE^2) at the end of the annealing.
+        data = (weight * gm ** 2 * r2 / (r2 + gm ** 2)).sum() / len(params) / GM_SCALE ** 2
         prior = (prior_w * delta ** 2).sum() / len(params) + args.depth_prior * (cam ** 2).sum() / len(params)
         acc = delta[2:] - 2 * delta[1:-1] + delta[:-2]
         cam_acc = cam[2:] - 2 * cam[1:-1] + cam[:-2]
-        temporal = (((temporal_w * acc ** 2).sum(1) + args.temporal * args.depth_temporal * (cam_acc ** 2).sum(1))
-                    * accel_ok).sum() / len(params)
+        temporal = ((temporal_w * acc ** 2 * accel_ok).sum() + (args.temporal * args.depth_temporal
+                    * (cam_acc ** 2).sum(1) * accel_ok.mean(1)).sum()) / len(params)
         loss = data + args.prior * prior + temporal
         optimizer.zero_grad()
         loss.backward()
@@ -171,6 +189,11 @@ def main():
     parser.add_argument("--legs_temporal", type=float, default=5e3,
                         help="temporal weight of the leg values (dance: 1e5 kept 0.87 of the feet amplitude, 5e3 0.92, "
                              "for the same jitter of the feet)")
+    parser.add_argument("--arms_temporal", type=float, default=1e5,
+                        help="temporal weight of the arm and wrist values")
+    parser.add_argument("--gm_start", type=float, default=1.0,
+                        help="Geman-McClure scale (torsos) at the start, annealed to 0.1 (graduated non-convexity); "
+                             "0.1 or less: fixed scale, as before")
     parser.add_argument("--fast_speed", type=float, default=1.0,
                         help="2D speed (torsos per second) at which the temporal weight is halved")
     parser.add_argument("--depth", action="store_true",
@@ -219,7 +242,8 @@ def main():
     free = [j for j, (part, _) in enumerate(parts) if part in args.parts]
     prior_w = torch.tensor([PRIOR[parts[j][0]] for j in free], device=args.device)
     # Per value: the legs keep less of the smoother's calm, so foot taps and stomps keep their amplitude.
-    temporal_w = torch.tensor([args.legs_temporal if parts[j][0] == "legs" else args.temporal for j in free],
+    limb_w = {"legs": args.legs_temporal, "arms": args.arms_temporal, "wrists": args.arms_temporal}
+    temporal_w = torch.tensor([limb_w.get(parts[j][0], args.temporal) for j in free],
                               device=args.device)
     print(f"{len(free)} free values: " + ", ".join(f"{p} {sum(parts[j][0] == p for j in free)}" for p in args.parts))
 
@@ -242,24 +266,37 @@ def main():
             sys.exit(f"error: person {person}: reference frames are not frames of {args.params}")
         frames = a["frames"][rows].astype(int)
         target = np.nan_to_num(ref["body"][:, COCO]).astype(np.float32)
-        view = keypoint_view.in_view(d, people, person, frames, ref["body"][:, COCO])
+        view_stats = {}
+        view = keypoint_view.in_view(d, people, person, frames, ref["body"][:, COCO],
+                                     cover=(ref["body"][:, COCO], ref["body_score"][:, COCO]), stats=view_stats)
         weight = np.where((ref["body_score"][:, COCO] > args.min_score) & view, ref["body_score"][:, COCO], 0)
         weight = weight.astype(np.float32)
         size = torso_size(target, weight)
         link = np.r_[False, (np.diff(frames) == 1) & (labels[frames[1:]] == labels[frames[:-1]])]
-        # 2D speed of the seen points, torsos per second: where the image moves fast, the fit may move fast.
+        # 2D speed of the seen points, torsos per second: where the image moves fast, the fit may move fast. Per part:
+        # the median over the whole body stays low when only a foot stamps or an arm strikes, and held them back.
         step = np.linalg.norm(np.diff(target, axis=0), axis=-1) / size[1:, None]
         both = (weight[1:] > 0) & (weight[:-1] > 0)
+
+        def part_speed(points):
+            st, bo = step[:, points], both[:, points]
+            fastest = np.where(bo, st, -np.inf).max(1)  # the fastest seen point of the part
+            sp = np.r_[0, np.where(bo.any(1), fastest, 0)] * fps
+            return np.where(link, np.nan_to_num(sp, neginf=0), 0)
+
         speed = np.r_[0, np.where(both.any(1), np.nanmedian(np.where(both, step, np.nan), axis=1), 0)] * fps
         speed = np.where(link, np.nan_to_num(speed), 0)
-        tweight = (1 / (1 + (speed / args.fast_speed) ** 2)).astype(np.float32)
+        speeds = {"legs": part_speed(LEG_POINTS), "arms": part_speed(ARM_POINTS), "wrists": part_speed(ARM_POINTS)}
+        per_value = np.stack([speeds.get(parts[j][0], speed) for j in free], 1)
+        tweight = (1 / (1 + (per_value / args.fast_speed) ** 2)).astype(np.float32)
         fast = speed >= np.percentile(speed[link], 90) if link.any() else np.zeros(len(frames), bool)
         held = np.zeros(len(frames), bool)
         if args.holdout:
             held[::args.holdout] = True
         fit_weight = np.where(held[:, None], 0, weight).astype(np.float32)
         print(f"person {person}: {len(frames)} frames, {100 * (weight > 0).mean():.1f}% of the points used, "
-              f"{100 * (1 - view.mean()):.1f}% out of view", flush=True)
+              f"{100 * (1 - view.mean()):.1f}% out of view, {view_stats.get('partial_mask_frames', 0)} frames with a "
+              f"partial mask", flush=True)
 
         if out_dir:
             dev = args.device

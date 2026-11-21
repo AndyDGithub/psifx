@@ -215,7 +215,8 @@ def main():
             # Detectors place hands out of the frame on its border, with confidence: such points are not data.
             n = len(frames)
             rtmw_pts = np.stack([ref["body"][:, RTMW_HANDS[s]] for s in "lr"], 1).reshape(n, 42, 2)
-            both = keypoint_view.in_view(d, people, person, frames, np.concatenate([rtmw_pts, ref["hands"].reshape(n, 42, 2)], 1))
+            both = keypoint_view.in_view(d, people, person, frames, np.concatenate([rtmw_pts, ref["hands"].reshape(n, 42, 2)], 1),
+                                         cover=(ref["body"][:, :23], ref["body_score"][:, :23]))
             view = {"rtmw": both[:, :42].reshape(n, 2, 21), "hand": both[:, 42:].reshape(n, 2, 21)}
             print(f"person {person}: {100 * (1 - view['rtmw'].mean()):.1f}% of RTMW hand points out of view", flush=True)
         targets = {s: reference(ref, s, args.min_score, view) for s in ("hand", "rtmw", "hand_only")}

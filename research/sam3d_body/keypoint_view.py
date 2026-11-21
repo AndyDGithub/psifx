@@ -6,7 +6,12 @@ an avatar on these points pulls it toward the border. A point is kept only if it
 
 - inside the picture, at least ``margin`` (share of the picture height) from its border. The picture is the area
   without the black bars of a letterboxed video, found once per video;
-- on the SAM3 mask of the person it belongs to, within ``reach`` pixels (masks are a little tight on hands).
+- on the SAM3 mask of the person it belongs to, within ``reach`` pixels (masks are a little tight on hands),
+  **unless the mask is partial on that frame**. SAM3 sometimes keeps only a piece of the person (V5, frames
+  310-370: the sweater, without head or legs, on 15 % of the dancer's frames); the mask test then hid legs seen
+  plainly by RTMW, and the foot stamps were never fitted. With ``cover`` (RTMW body points and scores), a frame
+  whose dilated mask holds less than ``cover_min`` of the confident body points inside the picture keeps only the
+  picture test.
 
 The track of each frame of a person comes from people.json, as in robust_smooth.visibility.
 """
@@ -51,10 +56,14 @@ def track_of_frames(people: dict, person: str) -> dict[int, str]:
 
 
 def in_view(pipeline: Path, people: dict, person: str, frames: np.ndarray, points: np.ndarray,
-            margin: float = 0.015, reach: int = 12, use_mask: bool = True) -> np.ndarray:
+            margin: float = 0.015, reach: int = 12, use_mask: bool = True,
+            cover: tuple[np.ndarray, np.ndarray] | None = None, cover_min: float = 0.7, cover_score: float = 3.0,
+            stats: dict | None = None) -> np.ndarray:
     """(n, k) bool: True where points[i, k] (pixels, frame frames[i]) is inside the picture and on the person's mask.
 
-    Frames of the person without a track in people.json keep only the picture test.
+    Frames of the person without a track in people.json keep only the picture test. cover: (body points (n, m, 2),
+    scores (n, m)) of RTMW; frames where the mask holds less than cover_min of the points scored above cover_score
+    keep only the picture test too (partial mask). stats, if given, receives "partial_mask_frames".
     """
     left, top, right, bottom = picture_area(pipeline / "input.mp4")
     m = margin * (bottom - top)
@@ -74,6 +83,11 @@ def in_view(pipeline: Path, people: dict, person: str, frames: np.ndarray, point
         if t is not None:
             by_track.setdefault(t, {}).setdefault(int(f), []).append(i)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1, 2 * reach + 1))
+    if cover is not None:
+        cu, cv_ = cover[0][..., 0], cover[0][..., 1]
+        confident = (cover[1] > cover_score) & np.isfinite(cu) & np.isfinite(cv_) & (cu >= left) & (cu < right) & \
+            (cv_ >= top) & (cv_ < bottom)
+    partial = 0
     for track, rows_of in by_track.items():
         path = pipeline / "masks" / f"{track}.mp4"
         if not path.is_file():
@@ -90,6 +104,12 @@ def in_view(pipeline: Path, people: dict, person: str, frames: np.ndarray, point
                     continue
                 mask = cv2.dilate((np.frombuffer(buffer, np.uint8).reshape(height, width) > 127).astype(np.uint8), kernel)
                 for i in rows_of[f]:
+                    if cover is not None and confident[i].sum() >= 5:
+                        cu_i = np.clip(np.round(cu[i][confident[i]]).astype(int), 0, width - 1)
+                        cv_i = np.clip(np.round(cv_[i][confident[i]]).astype(int), 0, height - 1)
+                        if (mask[cv_i, cu_i] > 0).mean() < cover_min:
+                            partial += 1  # partial mask: it would hide parts that are plainly seen
+                            continue
                     uu = np.clip(np.round(u[i]).astype(int), 0, width - 1)
                     vv = np.clip(np.round(v[i]).astype(int), 0, height - 1)
                     ok[i] &= mask[vv, uu] > 0
@@ -97,4 +117,6 @@ def in_view(pipeline: Path, people: dict, person: str, frames: np.ndarray, point
             process.stdout.close()
             process.kill()
             process.wait()
+    if stats is not None:
+        stats["partial_mask_frames"] = partial
     return ok

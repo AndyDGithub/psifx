@@ -173,6 +173,9 @@ def main():
                                                     "to know each sample's SAM3 mask (hidden parts)")
     parser.add_argument("--grid", type=int, default=2, help="frame step of the archives")
     parser.add_argument("--cut", type=float, default=18)
+    parser.add_argument("--reference", default="hand_reference",
+                        help="folder of RTMW references (hand_reference.py), if present: frames where the SAM3 mask "
+                             "is partial are judged on the picture only")
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args()
 
@@ -205,7 +208,16 @@ def main():
         if any("novis" not in v for v in robust_variants):
             if not args.people or not args.people.is_file():
                 sys.exit("error: the robust variants need --people (or use robust-novis)")
-            hidden = robust_smooth.visibility(args.pipeline, json.loads(args.people.read_text()), archives)
+            references = {}
+            for person in archives:
+                path = args.pipeline / args.reference / f"{person}.npz"
+                if path.is_file():
+                    with np.load(path) as npz:
+                        references[person] = {k: npz[k] for k in ("frames", "body", "body_score")}
+            if not references:
+                print(f"no {args.reference}/: SAM3 masks trusted on every frame", flush=True)
+            hidden = robust_smooth.visibility(args.pipeline, json.loads(args.people.read_text()), archives,
+                                              references=references)
             report_hidden = {p: {k: round(float(v.mean()), 3) for k, v in h.items()} for p, h in hidden.items()}
             print("hidden share per part:", report_hidden, flush=True)
     projected: dict[str, dict] = {v: {} for v in ["raw"] + args.variants}
