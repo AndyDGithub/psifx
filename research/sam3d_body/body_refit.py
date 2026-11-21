@@ -10,7 +10,14 @@ the 17 projected COCO points and the 6 feet points (heels, big and small toes) o
 - a **prior**: the change from the smoothed angles costs (more for the root than for the limbs);
 - a **temporal term**: the acceleration of the change costs, **less where the 2D points move fast**, so a fast move
   is followed and a still pose stays still (weight ``1 / (1 + (speed / --fast_speed)^2)``, speed in torsos per
-  second, from the 2D points).
+  second, from the 2D points);
+- a **silhouette term**, on the frames where the person's mask touches the picture's border (entering or leaving
+  the frame): the 23 points and the middles of the limbs must project on a SAM3 mask (anyone's: a limb may pass
+  behind another dancer) or outside the picture; the cost is the squared distance to such a place, in torsos. With
+  only the 2D points, the parts out of the frame were free: V5's man leaving the frame folded an arm and the legs
+  into the empty room, the girl pushed out lay down on the floor. On these frames the avatar may also move across
+  the image (``--edge_shift``), so it can leave the frame. Not used elsewhere: a part on no mask may be hidden by a
+  thing (legs under a table), not absent.
 
 The points are SAM 3D Body's own MHR70 keypoints, the ones the annotations are compared to. Shoulders, wrists, hips
 and knees are skeleton joints; the face, elbows, ankles and feet are mixes of mesh vertices. Each point is attached
@@ -53,6 +60,8 @@ PRIOR = {"root": 8.0, "torso_head": 4.0, "arms": 1.0, "wrists": 1.0, "legs": 1.0
 LEG_POINTS = [COCO.index(k) for k in (13, 14, 15, 16, 17, 18, 19, 20, 21, 22)]
 ARM_POINTS = [COCO.index(k) for k in (7, 8, 9, 10)]
 GM_SCALE = 0.1  # Geman-McClure scale, in torso sizes
+# Limb segments (COCO indices) whose middle is also checked by the silhouette term, besides the 23 points.
+SEGMENTS = [(5, 7), (7, 9), (6, 8), (8, 10), (11, 13), (13, 15), (12, 14), (14, 16), (5, 11), (6, 12), (5, 12), (6, 11)]
 
 
 def skeleton_state(mhr, params: torch.Tensor) -> torch.Tensor:
@@ -151,13 +160,37 @@ def gm_scale(it: int, args) -> float:
     return max(GM_SCALE, args.gm_start / 1.4 ** k)
 
 
+def silhouette_points(uv: torch.Tensor) -> torch.Tensor:
+    """(n, 23 + segments, 2): the 23 projected points and the middles of the limb segments."""
+    a, b = zip(*SEGMENTS)
+    return torch.cat([uv, 0.5 * (uv[:, list(a)] + uv[:, list(b)])], 1)
+
+
+def off_silhouette(uv: torch.Tensor, dist: torch.Tensor, scale: int) -> torch.Tensor:
+    """(n, k) distance in full-size pixels from each point to an allowed place (dist: (n, h, w) at 1/scale; outside
+    the map counts as allowed, bilinear so the gradient flows)."""
+    h, w = dist.shape[1:]
+    grid = torch.stack([2 * uv[..., 0] / scale / w - 1, 2 * uv[..., 1] / scale / h - 1], -1)[:, None]
+    return torch.nn.functional.grid_sample(dist[:, None], grid, align_corners=False, padding_mode="zeros")[:, 0, 0] * scale
+
+
 def fit_chunk(mhr, params, cam_t, focal, center, target, weight, size, link, tweight, free, prior_w, temporal_w, joints,
-              local, args):
-    """Changes of the free angles (and of the camera, with --depth) for one chunk of consecutive samples.
-    link[i]: sample i follows i-1."""
+              local, args, dist=None, edge=None):
+    """Changes of the free angles (and of the camera, with --depth, or on edge frames with --edge_shift) for one chunk
+    of consecutive samples. link[i]: sample i follows i-1. dist, edge: allowed_distance() maps (float, 1/scale) and
+    the frames where the silhouette term is used."""
     delta = torch.zeros(len(params), len(free), device=params.device, requires_grad=True)
     cam = torch.zeros(len(params), 3, device=params.device, requires_grad=True)
-    optimizer = torch.optim.Adam([delta, cam] if args.depth else [delta], lr=args.lr)
+    use_sil = dist is not None and bool(edge.any())
+    # Camera prior per frame and value: free (depth_prior) with --depth; with --edge_shift, the image shift is free
+    # on edge frames only; everything else is held by a large cost.
+    cam_prior = torch.full((len(params), 3), 1e4, device=params.device)
+    if args.depth:
+        cam_prior[:] = args.depth_prior
+    elif use_sil and args.edge_shift:
+        cam_prior[edge, 1:] = args.depth_prior
+    move_cam = args.depth or (use_sil and args.edge_shift)
+    optimizer = torch.optim.Adam([delta, cam] if move_cam else [delta], lr=args.lr)
     accel_ok = (link[1:-1] & link[2:]).float()[:, None] * tweight[1:-1]  # (n-2, free values)
     for it in range(args.iterations):
         gm = gm_scale(it, args)
@@ -173,12 +206,15 @@ def fit_chunk(mhr, params, cam_t, focal, center, target, weight, size, link, twe
         # sigma^2 r^2 / (sigma^2 + r^2), divided by GM_SCALE^2: quadratic near 0 whatever sigma (SMPLify's form), and
         # the former r^2 / (r^2 + GM_SCALE^2) at the end of the annealing.
         data = (weight * gm ** 2 * r2 / (r2 + gm ** 2)).sum() / len(params) / GM_SCALE ** 2
-        prior = (prior_w * delta ** 2).sum() / len(params) + args.depth_prior * (cam ** 2).sum() / len(params)
+        prior = (prior_w * delta ** 2).sum() / len(params) + (cam_prior * cam ** 2).sum() / len(params)
         acc = delta[2:] - 2 * delta[1:-1] + delta[:-2]
         cam_acc = cam[2:] - 2 * cam[1:-1] + cam[:-2]
         temporal = ((temporal_w * acc ** 2 * accel_ok).sum() + (args.temporal * args.depth_temporal
                     * (cam_acc ** 2).sum(1) * accel_ok.mean(1)).sum()) / len(params)
         loss = data + args.prior * prior + temporal
+        if use_sil:
+            off = off_silhouette(silhouette_points(uv), dist, args.sil_scale) / size[:, None]
+            loss = loss + args.silhouette * (edge[:, None] * off ** 2).sum() / len(params)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -251,6 +287,12 @@ def main():
                              "x2.35 close-up error measured before came from detector points invented out of the "
                              "frame; refitting the depth kept OKS (0.843 vs 0.841) and tripled the jitter)")
     parser.add_argument("--depth_prior", type=float, default=1.0, help="cost of a log depth change of 1")
+    parser.add_argument("--silhouette", type=float, default=100.0,
+                        help="weight of the silhouette term on frames where the person touches the picture's border "
+                             "(squared distance in torsos to a mask or the outside, per point); 0: off")
+    parser.add_argument("--sil_scale", type=int, default=4, help="the masks are read at 1/sil_scale")
+    parser.add_argument("--no_edge_shift", dest="edge_shift", action="store_false",
+                        help="keep the avatar's image position on edge frames (by default it may move, to leave)")
     parser.add_argument("--depth_temporal", type=float, default=10.0,
                         help="extra weight of the camera's acceleration (depth jumps were the worst spikes)")
     parser.add_argument("--holdout", type=int, default=0, help="leave every K-th frame out of the fit, measure there")
@@ -335,6 +377,12 @@ def main():
         if args.jerk_level > 0:
             weight = (weight * steadiness(target, frames, repeated, labels, args.jerk_level)).astype(np.float32)
         size = torso_size(target, weight)
+        dist = edge = None
+        if args.silhouette > 0:
+            dist, edge = keypoint_view.allowed_distance(d, people, person, frames,
+                                                        view_stats.get("partial_rows", np.zeros(0, int)),
+                                                        scale=args.sil_scale)
+            print(f"person {person}: {int(edge.sum())} frames at the picture's border (silhouette term)", flush=True)
         link = np.r_[False, (np.diff(frames) == 1) & (labels[frames[1:]] == labels[frames[:-1]])]
         # 2D speed of the seen points, torsos per second: where the image moves fast, the fit may move fast. Per part:
         # the median over the whole body stays low when only a foot stamps or an arm strikes, and held them back.
@@ -402,7 +450,9 @@ def main():
                     delta, cam = fit_chunk(mhr, t(params), t(a["cam_t"][rows]), t(a["focal"][rows]),
                                       torch.tensor(center, device=dev, dtype=torch.float32), t(target),
                                       t(fit_weight), t(size), torch.from_numpy(link[lo:hi]).to(dev), t(tweight),
-                                      free, prior_w, temporal_w, joints, local_all[lo:hi], args)
+                                      free, prior_w, temporal_w, joints, local_all[lo:hi], args,
+                                      None if dist is None else t(dist), None if edge is None else
+                                      torch.from_numpy(edge[lo:hi]).to(dev))
                     keep_to = min(b1, s + args.chunk)
                     new[s:keep_to, free] += delta[s - lo:keep_to - lo].cpu().numpy()
                     new_cam[s:keep_to] = moved_camera(t(a["cam_t"][rows]), cam)[s - lo:keep_to - lo].cpu().numpy()

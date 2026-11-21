@@ -253,39 +253,43 @@ def visibility(pipeline: Path, people: dict, archives: dict, margin: int = 10, r
     references = references or {}
     ref_row = {person: {int(f): r for r, f in enumerate(ref["frames"])} for person, ref in references.items()}
     partial_frames = {person: 0 for person in archives}
+    by_frame: dict[int, list] = {}  # frame -> [(track, person, sample)]
     for track, frames in needed.items():
-        path = pipeline / "masks" / f"{track}.mp4"
-        if not path.is_file():
-            sys.exit(f"error: missing {path}")
-        process = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(path), "-f", "rawvideo", "-pix_fmt", "gray",
-                                    "-"], stdout=subprocess.PIPE)
-        last = max(frames)
-        for f in range(last + 1):
-            buffer = process.stdout.read(width * height)
-            if len(buffer) < width * height:
-                sys.exit(f"error: {path} ends at frame {f}, frame {last} is needed")
-            if f not in frames:
-                continue
-            mask = np.frombuffer(buffer, np.uint8).reshape(height, width) > 127
+        if not (pipeline / "masks" / f"{track}.mp4").is_file():
+            sys.exit(f"error: missing {pipeline / 'masks' / f'{track}.mp4'}")
+        for f, items in frames.items():
+            by_frame.setdefault(f, []).extend((track, person, i) for person, i in items)
+    from keypoint_view import mask_frames
+    for f, masks in mask_frames(pipeline, max(by_frame) if by_frame else -1, width, height):
+        if f not in by_frame:
+            continue
+        for track, person, i in by_frame[f]:
+            if track not in masks:
+                sys.exit(f"error: {pipeline / 'masks' / f'{track}.mp4'} ends before frame {f}")
+            mask = masks[track]
+            others = np.zeros_like(mask)
+            for t, mk in masks.items():
+                if t != track:
+                    others |= mk
             near = lambda u, v: mask[max(0, v - reach):v + reach + 1, max(0, u - reach):u + reach + 1].any()  # noqa: E731
-            for person, i in frames[f]:
-                partial = False
-                r = ref_row.get(person, {}).get(f)
-                if r is not None:
-                    pts, sc = references[person]["body"][r, :23], references[person]["body_score"][r, :23]
-                    ok = (sc > cover_score) & (pts[:, 0] >= left) & (pts[:, 0] < right) & (pts[:, 1] >= top) & \
-                        (pts[:, 1] < bottom)
-                    if ok.sum() >= 5:
-                        inside = [near(int(round(x)), int(round(y))) for x, y in pts[ok]]
-                        partial = np.mean(inside) < cover_min
-                        partial_frames[person] += int(partial)
-                uv = archives[person]["keypoints_2d"][i]
-                for k in keypoints:
-                    u, v = int(round(uv[k, 0])), int(round(uv[k, 1]))
-                    if left + margin <= u < right - margin and top + margin <= v < bottom - margin:
-                        seen[person][i, k] = partial or near(u, v)
-        process.stdout.close()
-        process.wait()
+            # A point on another person and not near the own mask: read on the other person (or hidden behind).
+            other = lambda u, v: bool(others[min(max(v, 0), height - 1), min(max(u, 0), width - 1)]) and not near(u, v)  # noqa: E731
+            partial = False
+            r = ref_row.get(person, {}).get(f)
+            if r is not None:
+                pts, sc = references[person]["body"][r, :23], references[person]["body_score"][r, :23]
+                ok = (sc > cover_score) & (pts[:, 0] >= left) & (pts[:, 0] < right) & (pts[:, 1] >= top) & \
+                    (pts[:, 1] < bottom)
+                mine = [(int(round(x)), int(round(y))) for x, y in pts[ok]]
+                mine = [(x, y) for x, y in mine if not other(x, y)]  # RTMW reading the other person: no judge
+                if len(mine) >= 5:
+                    partial = np.mean([near(x, y) for x, y in mine]) < cover_min
+                    partial_frames[person] += int(partial)
+            uv = archives[person]["keypoints_2d"][i]
+            for k in keypoints:
+                u, v = int(round(uv[k, 0])), int(round(uv[k, 1]))
+                if left + margin <= u < right - margin and top + margin <= v < bottom - margin:
+                    seen[person][i, k] = (partial and not other(u, v)) or near(u, v)
     out = {}
     for person, n in partial_frames.items():
         if references:
