@@ -42,7 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import keypoint_view  # noqa: E402
 from hand_refit import project  # noqa: E402
 from robust_smooth import parameter_parts  # noqa: E402
-from run_keyframes import cut_labels  # noqa: E402
+from run_keyframes import cut_labels, repeated_frames  # noqa: E402
 
 # COCO-WholeBody 0-22 (body, then left big toe, small toe, heel, right big toe, small toe, heel) -> MHR70 keypoint.
 COCO = list(range(23))
@@ -106,6 +106,37 @@ def moved_camera(cam_t: torch.Tensor, cam: torch.Tensor) -> torch.Tensor:
     across the image at its new depth."""
     t = cam_t * torch.exp(cam[:, :1])
     return torch.cat([t[:, :2] + cam[:, 1:] * t[:, 2:], t[:, 2:]], 1)
+
+
+def steadiness(target: np.ndarray, frames: np.ndarray, repeated: np.ndarray, labels: np.ndarray,
+               level: float) -> np.ndarray:
+    """(n, k) factor in (0, 1] per 2D point: 1 / (1 + (a / level)^2), a = median over 7 new frames of the point's own
+    2D acceleration (torso sizes per frame^2, from the shoulders-hips distance of the target).
+
+    A detector's guess of a hidden part (legs under a table) jumps from frame to frame (RTMW's ankles on the
+    talk-show: 2 torsos per frame^2), a real fast move is smooth (V5's stamp: about 0.12). With the robust loss
+    annealed, guesses that fell on the mask were followed; this factor lets the real moves through and not them."""
+    new = np.where(~repeated[frames])[0]
+    out = np.ones(target.shape[:2])
+    if len(new) < 7:
+        return out
+    t = target[new]
+    torso = np.linalg.norm(t[:, [5, 6]].mean(1) - t[:, [11, 12]].mean(1), axis=-1)
+    torso = np.maximum(np.median(torso), 1.0)
+    f, lab = frames[new], labels[frames[new]]
+    acc = np.full(t.shape[:2], np.nan)
+    ok = (lab[2:] == lab[1:-1]) & (lab[1:-1] == lab[:-2]) & (np.diff(f)[1:] <= 3) & (np.diff(f)[:-1] <= 3)
+    a = np.linalg.norm(t[2:] - 2 * t[1:-1] + t[:-2], axis=-1) / torso
+    acc[1:-1][ok] = a[ok]
+    windows = np.lib.stride_tricks.sliding_window_view(np.pad(acc, ((3, 3), (0, 0)), constant_values=np.nan), 7, axis=0)
+    with np.errstate(all="ignore"):
+        med = np.nanmedian(windows, axis=-1)
+    factor = 1 / (1 + (np.nan_to_num(med, nan=0.0) / level) ** 2)
+    # Repeated frames take the factor of their last new frame (their own weight is 0 anyway).
+    last_new = np.maximum.accumulate(np.where(~repeated[frames], np.arange(len(frames)), 0))
+    full = np.ones(target.shape[:2])
+    full[new] = factor
+    return full[last_new]
 
 
 def gm_scale(it: int, args) -> float:
@@ -179,7 +210,8 @@ def main():
     parser.add_argument("--output", help="output folder (omit to only measure)")
     parser.add_argument("--evaluate", nargs="*", default=[], help="also measure these archive folders")
     parser.add_argument("--parts", nargs="+", default=["root", "torso_head", "arms", "wrists", "legs"])
-    parser.add_argument("--min_score", type=float, default=0.5)
+    parser.add_argument("--min_score", type=float, default=1.5, help="RTMW score under which a point is not used")
+    parser.add_argument("--full_score", type=float, default=3.0, help="RTMW score from which a point counts fully")
     parser.add_argument("--prior", type=float, default=0.01)
     parser.add_argument("--temporal", type=float, default=1e5,
                         help="weight of the acceleration (per frame) of the change. 1e5 keeps the robust smoother's "
@@ -189,8 +221,18 @@ def main():
     parser.add_argument("--legs_temporal", type=float, default=5e3,
                         help="temporal weight of the leg values (dance: 1e5 kept 0.87 of the feet amplitude, 5e3 0.92, "
                              "for the same jitter of the feet)")
-    parser.add_argument("--arms_temporal", type=float, default=1e5,
-                        help="temporal weight of the arm and wrist values")
+    parser.add_argument("--arms_temporal", type=float, default=5e3,
+                        help="temporal weight of the arm and wrist values (V5's arm crosses: 1e5 kept 0.47-0.59 of the "
+                             "wrists' peak speed, 5e3 0.73-0.95)")
+    parser.add_argument("--jerk_level", type=float, default=0.3,
+                        help="2D acceleration (torsos per frame^2, local median) at which a point's weight is halved; "
+                             "0: off")
+    parser.add_argument("--frames", type=int, nargs=2, help="first and last frame to fit (a test on an extract)")
+    parser.add_argument("--repeat_level", type=float, default=0.15,
+                        help="mean gray difference under which a frame repeats the previous one (0: off)")
+    parser.add_argument("--part_speed", choices=("max", "median", "off"), default="max",
+                        help="speed that relaxes each limb's temporal term: its fastest or median point, or off (the "
+                             "body median for every value, as before)")
     parser.add_argument("--gm_start", type=float, default=1.0,
                         help="Geman-McClure scale (torsos) at the start, annealed to 0.1 (graduated non-convexity); "
                              "0.1 or less: fixed scale, as before")
@@ -230,6 +272,10 @@ def main():
     if not fps:
         sys.exit("error: no frame rate in input.mp4")
     labels = cut_labels(d / "input.mp4", args.cut)
+    # A repeated frame (frame-rate conversion) brings no new image: no 2D target there, the temporal term interpolates;
+    # fitted, the avatar followed the detector's stairs (talk-show: 2D acceleration x5).
+    repeated = repeated_frames(d / "input.mp4") if args.repeat_level > 0 else np.zeros(len(labels), bool)
+    print(f"{100 * repeated.mean():.1f}% of the frames repeat the previous one: no 2D target there", flush=True)
     mhr = torch.jit.load(str(model), map_location=args.device)
     state = torch.load(args.checkpoint / "model.ckpt", map_location="cpu", weights_only=False)
     state = state.get("state_dict", state)
@@ -261,6 +307,9 @@ def main():
             sys.exit(f"error: missing {ref_path}")
         with np.load(ref_path) as npz:
             ref = {k: npz[k] for k in ("frames", "body", "body_score")}
+        if args.frames:
+            keep = (ref["frames"] >= args.frames[0]) & (ref["frames"] <= args.frames[1])
+            ref = {k: v[keep] for k, v in ref.items()}
         rows = np.searchsorted(a["frames"], ref["frames"])
         if (rows >= len(a["frames"])).any() or (a["frames"][np.minimum(rows, len(a["frames"]) - 1)] != ref["frames"]).any():
             sys.exit(f"error: person {person}: reference frames are not frames of {args.params}")
@@ -269,25 +318,49 @@ def main():
         view_stats = {}
         view = keypoint_view.in_view(d, people, person, frames, ref["body"][:, COCO],
                                      cover=(ref["body"][:, COCO], ref["body_score"][:, COCO]), stats=view_stats)
-        weight = np.where((ref["body_score"][:, COCO] > args.min_score) & view, ref["body_score"][:, COCO], 0)
+        # RTMW's scores: seen points 2.5-7, guesses of hidden legs 1-2 (talk-show, AVA). A ramp from --min_score to
+        # --full_score: at 0.5, guessed ankles on the torso's mask were targets, followed once the loss is annealed.
+        score = ref["body_score"][:, COCO]
+        ramp = np.clip((score - args.min_score) / max(args.full_score - args.min_score, 1e-6), 0, 1)
+        weight = np.where(view, score * ramp, 0)
         weight = weight.astype(np.float32)
+        weight = np.where(repeated[frames][:, None], 0, weight).astype(np.float32)
+        if args.jerk_level > 0:
+            weight = (weight * steadiness(target, frames, repeated, labels, args.jerk_level)).astype(np.float32)
         size = torso_size(target, weight)
         link = np.r_[False, (np.diff(frames) == 1) & (labels[frames[1:]] == labels[frames[:-1]])]
         # 2D speed of the seen points, torsos per second: where the image moves fast, the fit may move fast. Per part:
         # the median over the whole body stays low when only a foot stamps or an arm strikes, and held them back.
-        step = np.linalg.norm(np.diff(target, axis=0), axis=-1) / size[1:, None]
-        both = (weight[1:] > 0) & (weight[:-1] > 0)
+        # Step from the last new frame (repeats skipped), per frame of gap.
+        last_new = np.maximum.accumulate(np.where(~repeated[frames], np.arange(len(frames)), -1))
+        prev = np.r_[-1, last_new[:-1]]
+        ok_prev = (prev >= 0) & ~repeated[frames]
+        prev = np.maximum(prev, 0)
+        gap = np.maximum(np.arange(len(frames)) - prev, 1)[:, None]
+        step = (np.linalg.norm(target - target[prev], axis=-1) / size[:, None] / gap)[1:]
+        both = ((weight > 0) & (weight[prev] > 0) & ok_prev[:, None])[1:]
 
         def part_speed(points):
             st, bo = step[:, points], both[:, points]
-            fastest = np.where(bo, st, -np.inf).max(1)  # the fastest seen point of the part
-            sp = np.r_[0, np.where(bo.any(1), fastest, 0)] * fps
-            return np.where(link, np.nan_to_num(sp, neginf=0), 0)
+            if args.part_speed == "max":  # the fastest seen point of the part
+                v = np.where(bo, st, -np.inf).max(1)
+            else:  # the median seen point: one noisy point does not relax the whole limb
+                v = np.nanmedian(np.where(bo, st, np.nan), axis=1) if bo.any() else np.zeros(len(st))
+            sp = np.r_[0, np.where(bo.any(1), v, 0)] * fps
+            return spread(np.where(link, np.nan_to_num(sp, neginf=0), 0))
+
+        # A repeated frame has no speed of its own: it takes the one of the next new frame (else it stays stiff).
+        rep = repeated[frames]
+        next_new = np.minimum.accumulate(np.where(~rep, np.arange(len(frames)), len(frames) - 1)[::-1])[::-1]
+
+        def spread(sp):
+            return np.where(rep, sp[next_new], sp)
+
 
         speed = np.r_[0, np.where(both.any(1), np.nanmedian(np.where(both, step, np.nan), axis=1), 0)] * fps
-        speed = np.where(link, np.nan_to_num(speed), 0)
+        speed = spread(np.where(link, np.nan_to_num(speed), 0))
         speeds = {"legs": part_speed(LEG_POINTS), "arms": part_speed(ARM_POINTS), "wrists": part_speed(ARM_POINTS)}
-        per_value = np.stack([speeds.get(parts[j][0], speed) for j in free], 1)
+        per_value = np.stack([speed if args.part_speed == "off" else speeds.get(parts[j][0], speed) for j in free], 1)
         tweight = (1 / (1 + (per_value / args.fast_speed) ** 2)).astype(np.float32)
         fast = speed >= np.percentile(speed[link], 90) if link.any() else np.zeros(len(frames), bool)
         held = np.zeros(len(frames), bool)

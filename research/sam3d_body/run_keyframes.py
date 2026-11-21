@@ -37,14 +37,8 @@ GEOMETRY = ("keypoints_2d", "keypoints_3d", "cam_t", "focal")
 ANGLES = {"global_rot": 0, "body_pose_params": 0, "mhr_model_params": 3}  # First angle index: the rest is linear.
 
 
-def cut_labels(video: Path, threshold: float, min_ratio: float = 3.0) -> np.ndarray:
-    """Shot number of every frame, from the mean gray difference between frames.
-
-    A cut is a difference above ``threshold`` **and** at least ``min_ratio`` times the mean of its 2 + 2 neighbours
-    (the rolling average of PySceneDetect's AdaptiveDetector). A fast camera pan, a dancer crossing the frame or a
-    flash fading out give a run of high differences, not one spike: with the threshold alone, V5 frames 271-299
-    became 15 one-frame shots, with no smoothing and no temporal link in between (the push out of the frame lost).
-    min_ratio 0: threshold only, as before."""
+def frame_differences(video: Path) -> np.ndarray:
+    """Mean gray difference (0-255, at 320x180) of every frame but the first to the previous one."""
     w, h = 320, 180
     process = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(video), "-vf", f"scale={w}:{h}", "-f", "rawvideo",
                                 "-pix_fmt", "gray", "-"], stdout=subprocess.PIPE)
@@ -56,7 +50,24 @@ def cut_labels(video: Path, threshold: float, min_ratio: float = 3.0) -> np.ndar
         previous = frame
     if process.wait() != 0:
         sys.exit(f"error: ffmpeg failed on {video}")
-    d = np.array(differences)
+    return np.array(differences)
+
+
+def repeated_frames(video: Path, level: float = 0.15) -> np.ndarray:
+    """(n_frames,) bool: True where the frame repeats the previous one (a 25 fps video converted to 60 fps: 62 % of
+    the talk-show's frames). A still scene filmed live still changes by 0.2 gray level or more (sensor noise)."""
+    return np.r_[False, frame_differences(video) < level]
+
+
+def cut_labels(video: Path, threshold: float, min_ratio: float = 3.0) -> np.ndarray:
+    """Shot number of every frame, from the mean gray difference between frames.
+
+    A cut is a difference above ``threshold`` **and** at least ``min_ratio`` times the mean of its 2 + 2 neighbours
+    (the rolling average of PySceneDetect's AdaptiveDetector). A fast camera pan, a dancer crossing the frame or a
+    flash fading out give a run of high differences, not one spike: with the threshold alone, V5 frames 271-299
+    became 15 one-frame shots, with no smoothing and no temporal link in between (the push out of the frame lost).
+    min_ratio 0: threshold only, as before."""
+    d = frame_differences(video)
     cut = d > threshold
     if min_ratio > 0 and len(d):
         padded = np.pad(d, 2, mode="edge")
