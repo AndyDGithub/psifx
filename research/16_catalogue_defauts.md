@@ -321,3 +321,71 @@ Sources :
 - WHAM, contact des pieds et glissement : https://arxiv.org/pdf/2312.07531
 - GVHMR, coordonnées gravité-vue et étiquettes de pieds immobiles : https://arxiv.org/html/2409.06662v1
 - DanceHMR : https://arxiv.org/pdf/2605.18102
+
+## 8. Mouvements rapides et secs (2026-11-21, retour de l'auteur sur V5 entre 9 et 11 s)
+
+Demande : à 10-11 s le danseur tape du pied en croisant les bras ; les coups de pied n'apparaissaient pas et les
+bras étaient moins « saillants » que l'original. La précision prime sur la vitesse de calcul. Branche
+`fix/fast-motion` (sur `fix/leg-fidelity`, worktree `.worktrees/moving-plate`).
+
+SAM 3D Body tourne déjà sur **chaque image** : le « 1 image sur N » n'était pas en cause. Diagnostic étape par
+étape (`stage_diag.py`, cheville droite, images 312-336) : RTMW voit deux levers de pied de 100-130 px, SAM 3D Body
+brut en rend 50-70 px, le lissage robuste les efface (courbe plate), le recalage ne les rattrape pas.
+
+### 8.1 Causes et corrections
+
+| # | Cause | Correction |
+|---|---|---|
+| 1 | Le masque SAM3 du danseur ne couvre que le sweat sur 15 % de ses images (ni tête ni jambes) : le filtre de visibilité déclarait les jambes cachées, le lissage les figeait (bruit x100), le recalage les ignorait | Masque **partiel** = contient moins de 70 % des points du corps que RTMW voit avec assurance ; ces images sont jugées sur le cadre seul (`keypoint_view.in_view(cover=)`, `robust_smooth.visibility(references=)`) ; la référence 2D passe avant le lissage |
+| 2 | Perte Geman-McClure à échelle fixe 0,1 torse : un point à 0,4 torse ne tire qu'à 4 % — un vrai mouvement sec arrondi par le lissage était traité comme aberrant | **Non-convexité graduelle** : échelle de 1 torse divisée par 1,4 jusqu'à 0,1 (Yang et al. 2020), forme σ²r²/(σ²+r²) de SMPLify |
+| 3 | Le terme temporel se relâchait selon la vitesse **médiane du corps** : quand seul un pied ou un bras bouge, il restait raide | Relâchement **par membre** selon la vitesse de ses propres points ; bras libérés (`--arms_temporal 5e3` au lieu de 1e5) |
+| 4 | Détection de coupe à seuil fixe : panoramique rapide et flash = 15 plans d'une image (V5, 271-299), sans lissage ni continuité | Règle **adaptative** de PySceneDetect : la différence doit aussi valoir 3x la moyenne de ses 2+2 voisines. V5 : 23 coupes → 8 ; talk-show : 3 fausses coupes en moins (générique, zoom) ; autres vidéos inchangées |
+
+Trois effets de bord trouvés en validant sur les autres vidéos, et corrigés :
+
+| # | Effet | Correction |
+|---|---|---|
+| 5 | Talk-show converti de ~25 à 60 im/s : 62 % des images répètent la précédente, la cible avance en escalier et l'avatar la suivait (accélération x5) | Image répétée (différence < 0,15 niveau de gris) = pas de cible 2D, vitesse mesurée entre images nouvelles |
+| 6 | Seuil de score RTMW à 0,5 : les jambes cachées sous la table (score 1-2, contre 2,5-7 pour un point vu) tombaient sur le masque et étaient suivies une fois la perte recuite (genoux, chevilles : 1-2 torses/image²) | Poids en rampe du score 1,5 (nul) à 3 (plein) |
+| 7 | Adam à pas constant oscille autour de l'optimum, différemment à chaque image : le visage de l'avatar tremblait plus que les points RTMW eux-mêmes (V1 : 0,010 contre 0,007 ; 0,034 à 600 itérations) | Décroissance en cosinus du pas jusqu'à 1 %, 600 itérations |
+
+### 8.2 Résultats
+
+V5, danseur, images 299-345 (coup de pied et bras croisés), avatar final contre RTMW :
+
+| Point | Erreur (torse) avant → après | Amplitude | Vitesse de pointe |
+|---|---|---|---|
+| Cheville droite (pied qui tape) | 0,12 → 0,02 | 0,53 → 0,96 | 0,37 → 0,88 |
+| Poignet gauche | 0,13 → 0,04 | 0,88 → 1,05 | 0,47 → 0,74 |
+| Poignet droit | 0,14 → 0,03 | 0,89 → 1,04 | 0,59 → 0,95 |
+| Coude droit | 0,06 → 0,03 | 0,91 → 0,97 | 0,36 → 0,64 |
+
+Le pied de l'avatar monte à 190 px au-dessus des hanches pour 191 px sur l'image (avant : 290, pied au sol).
+
+Toutes les vidéos (recalage du corps, erreur médiane en torse et accélération 2D au 95e centile) :
+
+| Vidéo | Erreur avant → après | Accélération avant → après |
+|---|---|---|
+| Talk-show, 2 personnes | 0,035 / 0,039 → 0,020 / 0,022 | 0,0096 / 0,0176 → 0,0064 / 0,0086 |
+| V1 | 0,016 → 0,013 | 0,0095 → 0,0118 (visage au même niveau ; bras plus libres) |
+| AVA, 2 personnes | 0,032 / 0,077 → 0,017 / 0,028 | 0,017 / 0,026 → 0,012 / 0,024 |
+| V6 | 0,021 → 0,017 | 0,078 → 0,086 (danse : plus de mouvement gardé) |
+
+OKS du talk-show (200 images annotées à la main) : 0,835 → **0,845** après le recalage du corps (PCK@0,05 0,784 →
+0,796, poignets 0,924 → 0,931). Le recalage des mains qui suit le ramène à 0,835 : à examiner.
+
+### 8.3 Ce qui reste
+
+- **Identité entre plans (V5, 281-291)** : la piste SAM3 n° 1, la danseuse avant, porte l'homme qui entre ; il
+  change de couleur au flash (292). Ni les couleurs dans le masque (l'éclairage change d'un plan à l'autre) ni la
+  forme du corps de SAM 3D Body (faussée en gros plan) ne séparent les deux danseurs. Il faut un vrai modèle de
+  ré-identification de personnes.
+- **Personne à moitié sortie du cadre** (V5, 300-308, la danseuse poussée) : avatar couché.
+- Recalage des mains : -0,01 d'OKS sur le talk-show.
+- V5 : 14 plans courts restent sans fond.
+
+Sources :
+- Yang, Antonante, Tzoumas, Carlone, *Graduated Non-Convexity for Robust Spatial Perception* (RA-L 2020) :
+  https://arxiv.org/pdf/1909.08605
+- SMPLify, terme 2D Geman-McClure : https://arxiv.org/html/1607.08128
+- PySceneDetect, AdaptiveDetector : https://www.scenedetect.com/docs/api.html
