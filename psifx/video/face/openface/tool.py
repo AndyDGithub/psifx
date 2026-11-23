@@ -261,6 +261,7 @@ class OpenFaceTool(FaceAnalysisTool):
                     "-pix_fmt": "yuv420p",
                 },
                 overwrite=self.overwrite,
+                audio_source=video_path,
             ) as visualization_writer,
         ):
             for frame_idx, image in enumerate(
