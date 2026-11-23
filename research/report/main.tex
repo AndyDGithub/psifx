@@ -202,9 +202,10 @@ standardisées (\code{.tar.gz} contenant un fichier JSON par image).
 \label{sec:usecase}
 
 La première phase de ce travail (chapitres~\ref{chap:sota} à \ref{chap:discussion} pour la pose 2D) a amélioré ce que psifx
-extrait. Une fois les données meilleures, une question est restée : à quoi servent-elles, et peut-on les montrer ? Depuis
-novembre 2026, le travail vise donc une seconde direction, qui le démarque de la bibliothèque d'origine : reproduire la vidéo
-avec un avatar 3D par personne, à partir des données extraites.
+extrait. L'amélioration de la qualité des données extraites a conduit à une nouvelle problématique : leur exploitation et leur 
+représentation visuelle dans des situations d'interaction humaine. Depuis novembre 2026, le travail vise donc une seconde 
+direction, qui le démarque de la bibliothèque d'origine : reproduire la vidéo avec un avatar 3D par personne, à partir des 
+données extraites.
 
 \paragraph{Le cas d'utilisation.} Lors de la réunion du 10 novembre 2026, le professeur responsable a proposé le cas suivant. Un
 psychologue filme des participants, par exemple des personnes avec des troubles de l'attention. La version où chaque personne est
@@ -214,13 +215,13 @@ de situations et aux mises en situation. Les personnes en formation ne cherchent
 nécessaire de garantir l'anonymat, il faut surtout que \textbf{le comportement reste observable}.
 
 \paragraph{Le cadre légal.} Dans un projet de recherche, les participants signent un consentement éclairé et leurs données ne
-servent qu'à ce projet. Le besoin apparaît quand on veut les partager avec d'autres projets ou des collègues : ce sont des données
+servent qu'à ce projet. Le besoin apparaît lors de leur partage avec d'autres projets ou des collègues : ce sont des données
 personnelles, soumises au RGPD et à la loi suisse sur la protection des données (LPD). Selon le Préposé fédéral (PFPDT), la LPD ne
 s'applique plus à des données anonymisées dont la réidentification est impossible ou demande des efforts disproportionnés ; des
 données pseudonymisées, elles, restent personnelles \cite{pfpdt_recherche}.
 
 \paragraph{Le vocabulaire.} Remplacer une personne par un avatar n'est \textbf{ni une anonymisation}, ni une pseudonymisation.
-Ce n'est pas une anonymisation, car on ne peut pas la garantir en gardant le comportement : une personne se reconnaît à sa démarche
+Ce n'est pas une anonymisation, car elle ne peut pas être garantie en gardant le comportement : une personne se reconnaît à sa démarche
 et à ses mouvements \cite{hanisch2023gait, pantomime2026}. Ce n'est pas une pseudonymisation, terme juridique qui désigne le
 remplacement des identifiants par un pseudonyme dont quelqu'un garde la clé de correspondance. Ce rapport parle donc de
 \textbf{retirer l'apparence}, ou de remplacement par un avatar 3D, et mesure ce qui reste de l'identité au lieu de la supposer
@@ -616,8 +617,8 @@ qui conserve son comportement observable, pour la formation et l'analyse de situ
 \paragraph{Objectif secondaire.} Chiffrer ce qui reste de l'identité (apparence, morphologie, mouvement) et la fiabilité de la chaîne
 dans des conditions peu contrôlées, sur MEVID.
 
-\paragraph{Approche.} S'appuyer sur un modèle paramétrique qui sépare l'identité du mouvement (MHR) : on garde les paramètres de pose
-et d'expression, on peut remplacer ceux d'identité, et on mesure chaque niveau d'apparence sur les deux axes, toujours avec un
+\paragraph{Approche.} S'appuyer sur un modèle paramétrique qui sépare l'identité du mouvement (MHR) : les paramètres de pose et 
+d'expression sont conservés, les paramètres d'identité peuvent être remplacés, et nous mesurons chaque niveau d'apparence sur les deux axes, toujours avec un
 contrôle de qualité (chapitre~\ref{chap:methodo}).
 
 % =============================================================================
@@ -668,7 +669,7 @@ diagonale de la boîte englobante de la personne.
 \paragraph{Taux de détection.} Proportion d'images où le modèle trouve la personne annotée. Une image non détectée
 compte pour OKS = PCK = 0, pour qu'un modèle ne puisse pas paraître meilleur en ignorant les cas difficiles.
 
-\paragraph{Jerk normalisé (stabilité temporelle).} Faute de vérité terrain vidéo, on mesure la régularité des
+\paragraph{Jerk normalisé (stabilité temporelle).} Faute de vérité terrain vidéo, nous mesurons la régularité des
 trajectoires (dans l'esprit de la dimension \enquote{stabilité temporelle} du MBRCS \cite{fernandez2026mbrcs}) :
 pour chaque point-clé, la norme moyenne de la dérivée troisième de la position, calculée par différences finies
 ($\Delta t = 1/\mathrm{fps}$), divisée par une échelle de la personne (distance épaule--hanche). Plus la valeur
@@ -708,8 +709,8 @@ dimensions, chacune normalisée min-max.
 La seconde phase réutilise ce que psifx extrait déjà (suivi SAM3, audio, transcription) et y ajoute le maillage 3D et le rendu
 (figure~\ref{fig:pipeline}). Deux règles la guident :
 \begin{itemize}
-    \item \textbf{garder les paramètres, pas les sommets} : 42~Mo au lieu de 1,3~Go pour le talk-show, et c'est sur les paramètres
-    qu'on peut séparer l'identité du mouvement ;
+    \item \textbf{garder les paramètres, pas les sommets} : 42~Mo au lieu de 1,3~Go pour le talk-show, et ce sont les paramètres
+    qui permettent de dissocier l'identité du mouvement ;
     \item \textbf{ne jamais lisser ni interpoler à travers une coupe} de plan.
 \end{itemize}
 
@@ -870,7 +871,7 @@ points. L'exécution complète est rapportée à la section~\ref{sec:res-params}
 
 \paragraph{Pistes pour la cohérence temporelle.} SAM-Body4D \cite{sambody4d2025} fixe la morphologie et lisse la pose par un filtre
 de Kalman, mais il ne publie aucune mesure chiffrée, et sa complétion des occlusions est trop coûteuse ici (26~min pour 90 images à
-5 personnes). On en reprend la méthode, sans la complétion ni l'environnement.
+5 personnes). Nous reprenons cette méthode, sans la complétion ni l'environnement.
 
 \section{Retrouver les caméras par les points clés du décor}
 \label{sec:decor}
@@ -939,7 +940,7 @@ Découpage récursif, seuil 60~mm & $\times$ 3,4 & 0,847 & 47 \\
 presque rien : elle réagit aussi à la lumière et au décor. Le découpage récursif, où le modèle calcule le milieu d'un intervalle et ne
 redécoupe que s'il contredit l'interpolation, réduit d'un quart les grosses erreurs au poignet pour un gain voisin de l'espacement fixe.
 
-\paragraph{Caméra qui bouge.} Chaque image n'est calculée qu'une fois : si tout est redécoupé, on retrouve le coût normal, jamais plus.
+\paragraph{Caméra qui bouge.} Chaque image n'est calculée qu'une fois : si tout est redécoupé, nous retrouvons le coût normal, jamais plus.
 Le test du corps retire la rotation globale, donc une caméra synthétique jusqu'à 180°/s le laisse presque insensible ($\times$ 3,4 à
 3,7). Le test de place à l'image, lui, déclenche ($\times$ 1,4 au pire) : il faudra sans doute lui donner le mouvement de la caméra,
 tiré du décor. Un budget (jamais plus dense qu'une image sur 8) garantit $\times$ 2,5. Sur de vraies vidéos, comparées à leurs archives à
@@ -995,7 +996,7 @@ de 32 images par piste : environ 1,9~h pour les requêtes et 8,7~h pour la galer
     \item \textbf{Un score de démarche au-dessus du hasard n'est pas un défaut} : conserver le mouvement, c'est conserver ce qui identifie.
     Le résultat attendu est un compromis chiffré.
     \item \textbf{Interpoler lisse le mouvement} (section~\ref{sec:keyframes}) et pourrait gonfler la confidentialité : à mesurer avec et sans.
-    \item \textbf{On n'y converse pas.} L'utilité reste mesurée sur le talk-show, et la voix et le contenu de la parole restent identifiants.
+    \item \textbf{Absence d'interactions conversationnelles dans ce jeu de données.} L'utilité reste mesurée sur le talk-show, et la voix et le contenu de la parole restent identifiants.
 \end{itemize}
 
 % =============================================================================
@@ -1859,7 +1860,7 @@ locuteurs (97,7\,\% dans les trois cas). Si la diarisation coupe l'intervieweur 
 
 SAM~3D Body \cite{sam3dbody2026} reconstruit à partir d'une image le maillage complet d'une personne, mains et pieds
 compris (modèle MHR, environ 18\,000 sommets), ainsi que 70 points 3D en mètres. Il accepte une boîte et un masque
-comme guides. psifx produit déjà ces masques avec SAM3 : on peut donc lui indiquer quelle personne reconstruire, sans
+comme guides. psifx produit déjà ces masques avec SAM3 : nous pouvons donc lui indiquer quelle personne reconstruire, sans
 détecteur supplémentaire. Le test a été fait sur la branche \code{feature/sam3d-body}, avec des scripts de recherche
 (note \code{research/10_sam3d_body.md}).
 
@@ -1898,7 +1899,7 @@ Autre 3D & visage et regard (OpenFace) & idem & idem \\
 
 \paragraph{Sur les vidéos de bout en bout.} Une image sur 5 a été traitée, sur le GPU de 8~Go. Les maillages
 épousent les personnes en plan large comme en gros plan, derrière la table de V3, et sur la danseuse de V4 malgré la
-queue et la jupe (figure~\ref{fig:sam3d}). Faute de vérité terrain 3D sur ces vidéos, on mesure l'accord des points
+queue et la jupe (figure~\ref{fig:sam3d}). Faute de vérité terrain 3D sur ces vidéos, nous évaluons la concordance des points
 2D (réduits à COCO-17) avec RTMO sur les mêmes pistes, rapporté à la hauteur du torse (tableau~\ref{tab:sam3d-e2e}).
 Les deux modèles s'accordent à 3 à 5\,\% du torse près, sauf sur la danse. Les grands écarts viennent des membres
 cachés, par exemple la cheville sous la jambe croisée de V1.
@@ -1932,7 +1933,7 @@ V4 danse & 230 & 0,57~s & 0,067 & 85,0\,\% \\
 \paragraph{Par rapport à la littérature.} L'article compare SAM~3D Body aux meilleures méthodes à partir d'une image
 (tableau~\ref{tab:sam3d-lit}). En 3D, il est au niveau de NLF et de CameraHMR sur 3DPW, et devant eux sur EMDB, une
 base hors de son domaine d'entraînement. Le seul chiffre reproductible ici est le PCK@0,05 sur COCO, avec la boîte
-annotée comme guide. Sur les 500 images de COCO val2017 déjà utilisées pour MediaPipe, on obtient 84,4, contre 86,8
+annotée comme guide. Sur les 500 images de COCO val2017 déjà utilisées pour MediaPipe, nous avons obtenu 84,4, contre 86,8
 dans l'article sur tout COCO val. L'écart de 2,4 points est plausible : le sous-ensemble diffère, et la normalisation
 (ici, le plus grand côté de la boîte) peut différer un peu. Sur ces mêmes images, l'OKS vaut 0,894 et le PCK@0,2
 0,994. MediaPipe obtenait 0,331 et 0,505, mais sans boîte (section~\ref{sec:mediapipe-tasks}) : l'écart mesure aussi
@@ -2173,8 +2174,8 @@ En haut un plan large, en bas un gros plan. Les avatars suivent la posture, l'or
 
 Sur la vidéo, une même personne doit garder sa couleur et sa morphologie. Or une piste SAM3 n'est pas toujours une personne : sur le
 talk-show, la femme a deux pistes (gros plans et plans larges), et des danseurs d'une vidéo insérée en écran partagé reçoivent des
-avatars. Pour le mesurer, les 297 personnes des 200 images annotées ont été étiquetées (l'homme, la femme, incrustation, ou non
-identifiable) ; cet étiquetage a été fait par l'assistant à partir de planches de découpes, puis vérifié par l'auteur.
+avatars. Pour le mesurer, les 297 personnes annotées ont été classées en quatre catégories (homme, femme, incrustation ou non identifiable). 
+Un premier étiquetage a été réalisé avec une assistance automatisée à partir de planches de découpes, puis les annotations ont été vérifiées manuellement.
 
 \begin{table}[H]
 \centering
@@ -2199,7 +2200,7 @@ Pistes fusionnées par la morphologie & 54,5\,\% \\
     \item \textbf{Les couleurs du masque réunissent les deux pistes de la femme} et écartent 3 des 9 danseurs de la vidéo insérée.
     Les couleurs ne servent qu'à construire les avatars, jamais au partage. Le seuil (0,4) a été choisi sur ces mêmes étiquettes :
     96,6\,\% est un peu optimiste.
-    \item Les étiquettes, posées à partir de planches de découpes, ont été vérifiées par l'auteur sur une page de relecture
+    \item Les étiquettes, posées à partir de planches de découpes, ont été vérifiées manuellement sur une page de relecture
     (\code{review\_labels.py}) : 4 corrections sur 297, qui ne changent pas les conclusions.
 \end{itemize}
 
@@ -2621,7 +2622,7 @@ brut.
 
 La danse animée de V4 sort du cas d'utilisation ; deux danses humaines la remplacent. \textbf{V5} est une vidéo montée (24~s,
 30~images/s, 720$\times$1280, deux danseurs, un encart \enquote{tuto} et une poussée hors du cadre) ; \textbf{V6} montre une danse rapide en
-plan fixe. En la regardant, l'auteur a relevé des jambes \enquote{raccourcies et molles}, des tapes de pied absentes et des bras moins
+plan fixe. En la regardant, nous avons relevé des jambes \enquote{raccourcies et molles}, des tapes de pied absentes et des bras moins
 saillants que l'original. Pour la psychologie, chaque petit mouvement compte : une information manquante est plus grave qu'un léger
 tremblement, et la fidélité du mouvement est devenue la priorité.
 
@@ -2719,7 +2720,7 @@ talk-show atteint 0,845.
 \section{Une personne d'un plan à l'autre, et au bord du cadre}
 \label{sec:res-reid}
 
-Sur V5, entre 9 et 10~s, l'auteur a relevé trois défauts : la danseuse, verte, devenait jaune au plan de la poussée et l'homme vert au
+Sur V5, entre 9 et 10~s, l'analyse qualitative a mis en évidence trois défauts : la danseuse, verte, devenait jaune au plan de la poussée et l'homme vert au
 lieu de rouge ; l'avatar de l'homme prenait une pose étrange en sortant du cadre ; celui de la danseuse tombait au sol au lieu de sortir
 du cadre. Les couleurs du masque (section~\ref{sec:res-people}) ne séparent pas les deux danseurs, car l'éclairage change d'un plan à
 l'autre, et la morphologie est faussée en gros plan.
@@ -2882,7 +2883,7 @@ sous 64~px ne sont pas montrées.}
 \label{sec:res-identity}
 
 \paragraph{Référence d'apparence.} CAL, avec le code et les poids publiés par les auteurs de MEVID, a été évalué sur toute la
-partie test (1,19 million d'images, 51~min sur la carte graphique partagée). On retrouve les chiffres de l'article : 52,5\,\% de
+partie test (1,19 million d'images, 51~min sur la carte graphique partagée). Les résultats reproduisent ceux de l'article : 52,5\,\% de
 Rank-1 (52,5 publié), 27,0\,\% de mAP (27,1) et 73,1\,\% de Rank-10 (73,7). L'évaluation est donc juste. Le même calcul montre
 aussi la limite de cet attaquant : quand la personne a changé de tenue, CAL ne la place en tête que dans \textbf{3,5\,\%} des cas
 (mAP 4,3\,\%), contre 56,6\,\% à tenue égale. L'apparence, même pour un modèle entraîné à ignorer les vêtements, repose encore
@@ -2894,7 +2895,7 @@ leurs avatars à leur morphologie (niveau N2, fond gris, une couleur pour tous),
 Ce résultat ne prouve rien à lui seul : CAL a appris sur de vraies images, et des avatars gris sont loin de ce qu'il connaît. Les
 attaquants qui suivent, eux, regardent ce que l'avatar garde.
 
-\paragraph{Attaquants sur les paramètres.} Avant même de rendre les avatars, on peut mesurer ce que leurs paramètres laissent de
+\paragraph{Attaquants sur les paramètres.} Avant même de rendre les avatars, nous pouvons mesurer ce que leurs paramètres laissent de
 l'identité. Chaque piste est décrite par la moyenne de ses paramètres d'identité (morphologie), de ses échelles de membres, ou par
 des statistiques de ses angles d'articulations (mouvement), et l'attaquant prend la piste de galerie la plus proche, sans aucun
 entraînement (figure~\ref{fig:identity-attacks}).
@@ -2957,7 +2958,8 @@ Hasard & 1,7\,\% & 0,8\,\% & 0,06\,\% \\
     \item \textbf{Le contrôle montre que le signal passe} : la signature retrouve l'autre moitié de sa propre piste dans 45\,\% des
     cas. Ce signal mêle l'identité, l'angle de vue et l'activité.
     \item \textbf{Les avatars gardent presque tout ce mouvement} (43 à 44\,\% contre 45\,\%), y compris à morphologie neutre. C'est le
-    but pour l'utilité, et cela confirme la réunion du 10 novembre : ce que la démarche dit de l'identité, l'avatar le garde.
+    but pour l'utilité, et ces observations sont cohérentes avec les objectifs définis lors de la réunion du 10 novembre : ce que la 
+    démarche dit de l'identité, l'avatar le garde.
     \item Un attaquant de démarche entraîné sur des vidéos de surveillance (la partie entraînement de MEVID) donnerait le plafond qui
     manque. C'est le prochain pas de cette mesure.
 \end{itemize}
@@ -2970,7 +2972,7 @@ Hasard & 1,7\,\% & 0,8\,\% & 0,06\,\% \\
 \section{Réponses aux questions}
 
 \paragraph{Q1 -- Gain de précision.} Il est massif : de 0,235 (MediaPipe) à 0,830--0,890 d'OKS dans le banc de
-recherche, et de 0,283 à 0,826--0,873 via la commande psifx. Nos propres mesures confirment ainsi les comparatifs
+recherche, et de 0,283 à 0,826--0,873 via la commande psifx. Les mesures réalisées confirment ainsi les comparatifs
 indépendants \cite{circus2026mediapipe,gait2022comparison}. Sapiens2, pourtant le plus récent, perd 25 à 30 points
 face aux meilleurs candidats dans nos conditions (détecteur par défaut, bf16), et toutes ses tailles restent sous
 1,5 image/s.
@@ -3134,16 +3136,17 @@ recherche, cela veut dire : filtrer, et rapporter les résultats par taille d'im
 
 \section{Organisation}
 
-\paragraph{Un fil rouge plutôt qu'un calendrier.} Le sujet a changé de direction plusieurs fois, au gré des problèmes imprévus et
-des idées nouvelles. Un calendrier par semaine aurait été réécrit à chaque fois. Le travail suit donc un ordre de priorités, revu à
-chaque changement : rendre les données exploitables, les montrer, mesurer, puis élargir. Si le temps manque, la dernière étape
-saute en premier.
+\paragraph{Un fil rouge plutôt qu'un calendrier.} Le projet a connu plusieurs réorientations méthodologiques, motivées par les résultats 
+expérimentaux, les contraintes techniques rencontrées et l'évolution des objectifs. Une planification adaptative, fondée sur la priorisation 
+des tâches, a donc été privilégiée par rapport à un calendrier hebdomadaire rigide. Le travail suit un ordre de priorités, revu à
+chaque changement : rendre les données exploitables, les montrer, mesurer, puis élargir. En cas de contraintes temporelles, les tâches
+ d'extension du périmètre sont considérées comme secondaires par rapport aux objectifs de validation.
 
-\paragraph{Le rapport au fil de l'eau.} Il n'y a pas de phase de rédaction séparée : chaque résultat, chaque idée abandonnée et
+\paragraph{Documentation continue des travaux.} Il n'y a pas de phase de rédaction séparée : chaque résultat, chaque idée abandonnée et
 chaque décision est consignée au moment où elle arrive, d'abord dans une note de recherche (\code{research/NN_*.md}), puis dans ce
 rapport. Chaque version compilée est gardée (\code{report-psifx-vN.pdf}).
 
-\paragraph{Une branche par sujet.} Chaque modèle, correction ou expérience a sa branche (\code{feature/*}, \code{optim/*},
+\paragraph{Stratégie de gestion des branches Git.} Chaque modèle, correction ou expérience a sa branche (\code{feature/*}, \code{optim/*},
 \code{fix/*}, \code{experiment/*}, \code{docs/*}). Les branches validées sont fusionnées dans \code{dev} ; \code{main} ne reçoit que
 les fichiers de la bibliothèque, par une branche \code{release/*}. Les branches abandonnées sont gardées sous forme de tags
 \code{archive/*}. Les calculs longs tournent la nuit, avec reprise après arrêt.
@@ -3370,9 +3373,9 @@ bibliothèque d'origine ne fournissait pas, avec une précision 2D proche de cel
 rassemblé sur \code{dev} et validé dans un environnement neuf, puis publié sur \code{main}.
 
 Une vérité terrain faite à la main sur un talk-show a corrigé une conclusion : le meilleur compromis sur COCO n'est pas le meilleur sur
-des cadrages rapprochés, et les masques SAM3 coûtent de la précision. La suite ne cherche plus seulement à extraire mieux : elle vise à
-reproduire la vidéo avec des avatars 3D, à prouver ainsi que les données sont exploitables, et à mesurer si l'on peut retirer
-l'apparence d'une personne en conservant son comportement (section~\ref{sec:usecase}).
+des cadrages rapprochés, et les masques SAM3 coûtent de la précision. 
+Les travaux ont ainsi été étendus au-delà de l'amélioration de l'extraction des caractéristiques, avec pour nouvel objectif la reconstruction 
+de vidéos au moyen d'avatars 3D, tout en évaluant la préservation du comportement et la réduction des informations d'apparence (section~\ref{sec:usecase}).
 
 La seconde phase a commencé à le montrer. Les paramètres du modèle du corps suffisent à reproduire le talk-show avec un avatar par
 personne, à plusieurs niveaux d'apparence, avec le son et les sous-titres ; les images clés divisent le coût par neuf. Sur les
@@ -3382,7 +3385,7 @@ l'autre ; les avatars gardent pourtant l'essentiel de ce mouvement. Il reste l'e
 que le comportement reste observable, et entraîner un attaquant de démarche sur des vidéos de surveillance. Les avatars sont désormais
 lisses sans perdre les gestes, ils sourient, leurs mains suivent l'image et les sous-titres désignent le bon locuteur ; un catalogue
 mesuré des défauts sur quatre scénarios a guidé leurs corrections, et sur des danses humaines les petits mouvements (pieds, gestes secs)
-sont désormais rendus, chaque personne gardant sa couleur d'un plan à l'autre. Comme l'a rappelé la réunion du 10 novembre, le
+sont désormais rendus, chaque personne gardant sa couleur d'un plan à l'autre. Conformément aux objectifs définis le 10 novembre, le
 résultat attendu n'est pas une anonymisation, mais un compromis chiffré entre ce qu'on garde du comportement et ce qui reste de
 l'identité.
 
