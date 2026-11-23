@@ -16,6 +16,11 @@ Here the link comes from the video: a person's mouth moves while their voice is 
    left-over speakers (diarization often splits one voice in two) go to their best person, else
    "offscreen" (voice-over, music, someone not visible).
 
+With ``--people people.json`` (``research/scene3d/merge_people.py``), the lips are read per merged person
+instead of per SAM3 track: each piece (track, shot, frames) gives its frames to its person, pieces left out (an
+inserted video, a dancer) are not used. A voice then goes to the person whose avatar is drawn, so the subtitle
+takes the avatar's color, and a track mixing two people no longer blurs the lip score.
+
 Writes ``identification_lips.json`` in the format of ``psifx audio identification``
 (``{"mapping": {speaker: person}, "agreement": ...}``) plus the scores, so that
 ``psifx audio transcription enhance`` can use it directly.
@@ -56,6 +61,18 @@ def mouth_opening(poses: Dict[int, dict], n_frames: int) -> np.ndarray:
         if width > 1.0:  # pixels; a degenerate mouth means a failed detection
             opening[i] = np.linalg.norm(face[UPPER_LIP, :2] - face[LOWER_LIP, :2]) / width
     return opening
+
+
+def merge_openings(openings: Dict[str, np.ndarray], people: dict, n_frames: int) -> Dict[str, np.ndarray]:
+    """Mouth openings per merged person: each assigned piece copies its track's frames (NaN elsewhere)."""
+    merged = {str(p): np.full(n_frames, np.nan) for p in range(people["people"])}
+    for piece in people["assignment"]:
+        person, track = piece["person"], str(piece["track"])
+        if person is None or str(person) not in merged or track not in openings:
+            continue  # Left-out piece (other people, inserted video) or a track without face archive.
+        start, end = piece["frames"][0], min(piece["frames"][1], n_frames - 1)
+        merged[str(person)][start:end + 1] = openings[track][start:end + 1]
+    return merged
 
 
 def lip_activity(opening: np.ndarray, fps: float, window_s: float = 0.5) -> np.ndarray:
@@ -129,14 +146,19 @@ def main():
                         help="minimum share of a speaker's time where the person's lips are visible")
     parser.add_argument("--visibility_weight", type=float, default=1.0,
                         help="weight of the on-screen term (0 to use the lips only)")
+    parser.add_argument("--people", type=Path, help="people.json of merge_people.py: link voices to merged people")
+    parser.add_argument("--diarization", type=Path, help="default: <out_dir>/diarization.rttm")
+    parser.add_argument("--asd", type=Path, help="folder of asd_speakers.py scores (<person>.npy), used instead of "
+                                                 "the lip opening; the people are those of people.json")
+    parser.add_argument("--output", type=Path, help="default: <out_dir>/identification_lips.json")
     args = parser.parse_args()
     d = args.out_dir
 
-    poses_dir, diarization_path = d / "poses_mp", d / "diarization.rttm"
-    for path in (poses_dir, diarization_path, d / "input.mp4"):
+    poses_dir, diarization_path = d / "poses_mp", args.diarization or d / "diarization.rttm"
+    for path in (poses_dir, diarization_path, d / "input.mp4", *([args.people] if args.people else [])):
         if not path.exists():
             sys.exit(f"error: missing {path}")
-    output = d / "identification_lips.json"
+    output = args.output or d / "identification_lips.json"
 
     with video.VideoReader(path=d / "input.mp4") as reader:
         n_frames, fps = len(reader), float(Fraction(reader.frame_rate))  # "25/1" or "30000/1001"
@@ -145,11 +167,19 @@ def main():
         sys.exit("error: empty diarization, nothing to link")
 
     decoder = PoseEstimationTool(device="cpu", verbose=False)
-    activity = {}
+    openings = {}
     for archive in sorted(poses_dir.glob("*.tar.gz")):
-        person = archive.name.removesuffix(".tar.gz")
         poses, _ = decoder.decode(archive)
-        activity[person] = lip_activity(mouth_opening(poses, n_frames), fps)
+        openings[archive.name.removesuffix(".tar.gz")] = mouth_opening(poses, n_frames)
+    if args.people:
+        openings = merge_openings(openings, json.loads(args.people.read_text()), n_frames)
+    # Activity per person; a shot cut inside the window mixes two faces, rare enough to be left as is.
+    activity = {person: lip_activity(o, fps) for person, o in openings.items()}
+    if args.asd:
+        # Active speaker scores (audio and face together): already a "this face is talking" signal per frame.
+        activity = {a.stem: np.load(a)[:n_frames] for a in sorted(args.asd.glob("*.npy"))}
+        if not activity:
+            sys.exit(f"error: no scores in {args.asd}")
 
     scores, coverage, visibility = score_matrix(activity, segments, n_frames, fps, args.min_coverage,
                                                 args.visibility_weight)
@@ -164,7 +194,8 @@ def main():
         "lip_coverage": json.loads(coverage.round(3).to_json()),
         "visibility": json.loads(visibility.round(3).to_json()),
         "params": {"min_score": args.min_score, "min_coverage": args.min_coverage,
-                   "visibility_weight": args.visibility_weight},
+                   "visibility_weight": args.visibility_weight, "people": str(args.people) if args.people else None,
+                   "diarization": str(diarization_path)},
     }
     output.write_text(json.dumps(result, indent=2))
     print(json.dumps(result["mapping"], indent=2))

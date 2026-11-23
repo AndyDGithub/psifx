@@ -18,6 +18,7 @@ or burnable with ffmpeg.
 from __future__ import annotations
 
 import argparse
+import json
 from fractions import Fraction
 import math
 import subprocess
@@ -99,6 +100,8 @@ def speaker_color(speaker: Optional[str], colors: Dict[str, tuple]) -> tuple:
 def speaker_label(speaker: Optional[str]) -> str:
     if speaker and speaker.startswith("person_"):
         return "P" + speaker.removeprefix("person_")
+    if speaker and speaker.startswith("off_"):  # Distinct off-screen voices of voice_ids.py.
+        return "off " + speaker.removeprefix("off_")
     return "?" if speaker in (None, "NA") else "off"
 
 
@@ -169,8 +172,10 @@ def write_ass(path: Path, segments, colors, width: int, height: int):
              "Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, BorderStyle, "
              "Outline, Shadow, Alignment, MarginL, MarginR, MarginV"]
     for name, color in styles.items():
-        lines.append(f"Style: {name},DejaVu Sans,{max(18, height // 22)},{ass_color(color)},&H00000000,&H80000000,"
-                     f"1,1,2,1,2,20,20,30")
+        # Opaque box (BorderStyle 3: the outline colour fills a box), black at 70 %: text in the person's color stays
+        # readable over an avatar of the same color.
+        lines.append(f"Style: {name},DejaVu Sans,{max(18, height // 22)},{ass_color(color)},&H4D000000,&H00000000,"
+                     f"1,3,8,0,2,20,20,30")
     lines += ["", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
     for seg in segments:
         label = speaker_label(seg["speaker"])
@@ -186,11 +191,26 @@ def main():
     parser.add_argument("out_dir", type=Path)
     parser.add_argument("--body_dir", default="poses_body", help="COCO-17 archives drawn as the body")
     parser.add_argument("--min_conf", type=float, default=0.3, help="body keypoint confidence threshold")
+    parser.add_argument("--subtitles", type=Path, help="speaker-labeled VTT (default: transcription_enhanced.vtt)")
+    parser.add_argument("--subtitles_only", action="store_true",
+                        help="only write subtitles.ass; with --people, person N takes color N as its avatar")
+    parser.add_argument("--people", type=Path, help="people.json of merge_people.py (colors of the merged people)")
     args = parser.parse_args()
     d = args.out_dir
 
     src = d / "input.mp4"
-    subtitles_path = d / "transcription_enhanced.vtt"
+    subtitles_path = args.subtitles or d / "transcription_enhanced.vtt"
+    if args.subtitles_only:
+        for path in (src, subtitles_path, *([args.people] if args.people else [])):
+            if not path.exists():
+                sys.exit(f"error: missing {path}")
+        with video.VideoReader(path=src) as reader:
+            h, w = next(iter(reader)).shape[:2]
+        n_people = json.loads(args.people.read_text())["people"] if args.people else 1
+        colors = {str(k): PALETTE[k % len(PALETTE)] for k in range(n_people)}  # Order of render_avatars.py.
+        write_ass(d / "subtitles.ass", vtt.VTTReader.read(subtitles_path, verbose=False), colors, w, h)
+        print(f"wrote {d / 'subtitles.ass'}")
+        return
     for path in (src, subtitles_path, d / args.body_dir):
         if not path.exists():
             sys.exit(f"error: missing {path}")
