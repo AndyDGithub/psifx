@@ -1,0 +1,478 @@
+# Catalogue des défauts de la reproduction en avatars (2026-11-20)
+
+Objectif : rassembler les défauts de la chaîne avatar sur quatre scénarios différents avant de corriger, afin de
+corriger les causes et non les symptômes. Tous les chiffres ci-dessous sont mesurés sur nos sorties, avec la même
+chaîne pour toutes les vidéos (`scratch/avatar_chain.sh`). La chaîne enchaîne SAM 3D Body sur chaque image, puis
+le lissage robuste, le visage, le recalage des mains sur RTMW, les plaques de décor et le rendu
+`--background plate`.
+
+| | Vidéo | Ce qu'elle teste |
+|---|---|---|
+| **TS** | Talk-show, 2 personnes, 118 plans, 60 im/s | Montage, zooms, gros plans |
+| **V1** | `example/Video.mp4`, 1 personne, caméra fixe, 25 im/s, 46 s | Le cas le plus simple : référence |
+| **V2** | AVA, 2 personnes, 1 plan avec caméra mobile lente, 25 im/s, 120 s | Caméra qui bouge, corps coupés par le cadre, manteaux |
+| **V4** | Danse, personnage animé non humain (queue, jupe, cheveux), 608×1080, 24 im/s, 48 s | Mouvements rapides et complexes, corps non humain |
+
+## 1. Mesures par scénario
+
+Les erreurs 2D sont en tailles de torse (distance épaules–hanches), les erreurs des mains en tailles de main.
+Elles sont mesurées sur les points RTMW de confiance supérieure à 0,5 (corps), et sur le modèle de main RTMPose
+gardé à part pour les mains. « Rapide » désigne les 10 % d'images où les points 2D bougent le plus.
+
+| Mesure | TS | V1 | V2 (p0 / p1) | V4 |
+|---|---|---|---|---|
+| Écart de taille avatar/2D dans un plan (écart-type) | < 4 % | 1,5 % | 7 % / 9 % | **13 %** |
+| Variation de taille d'une image à l'autre (p95) | — | 0,5 % | 7 % / 8 % | **25 %** |
+| Silhouette contre masque SAM3 : IoU, aire | 0,83–0,85 ; 1,00 | 0,88 ; 0,96 | 0,83 / 0,80 ; 0,93 / 0,86 | **0,54 ; 0,68** |
+| Corps 2D : médiane, PCK@0,2 | OKS 0,82 | 0,05 ; 0,89 | 0,20 / 0,27 ; 0,50 / 0,44 | **0,34 ; 0,40** |
+| Corps 2D, images rapides (brut → final) | — | 0,047 → 0,054 | 0,23 → 0,22 | **0,86 → 0,94** |
+| Poignets et chevilles 2D (médiane) | PCK poignets 0,92 | 0,06 | **0,83 / 1,06** | 0,73 |
+| Mains, médiane (brut → recalé) | 0,24 → 0,09 | 0,15 → 0,05 | 0,62 → 0,50 / **1,11 → 0,99** | 0,37 → 0,25 |
+| Pics de mouvement par minute (brut → final) | 386 → 0 | 119 → 0 (profondeur) | 262 → 0,2 | **1367 → 293** |
+| Sauts d'orientation > 45° par image (brut → final) | — | 0 → 0 | 0 → 0 | **27 → 0** |
+| Visage lu par MediaPipe | — | 99,7 % | 87 % / **65 %** | **28 %** |
+| Fond : plans avec plaque | 69/118 | 1/1 (après seuils) | **0/1** | 1/1 |
+
+## 2. Défauts, classés par cause
+
+Priorité : **A** = visible dans toute la vidéo ou fausse les mesures ; **B** = visible par moments ; **C** = mineur.
+
+### 2.1 Les points 2D de référence ne sont pas fiables (cause commune à plusieurs défauts)
+
+| # | Défaut | Où | Preuve | Prio |
+|---|---|---|---|---|
+| D1 | **Mains et poignets hors cadre détectés quand même** : RTMW les place au bord de l'image avec une confiance > 0,5 | V2 (et TS en gros plan) | Superposition des images 1200, 2000 et 2700 de V2 (`scratch/v2_overlay.jpg`) : les poignets verts sont collés au bas du cadre | **A** |
+| D2 | Le recalage des mains suit ces faux points : sur V2 p1, l'erreur reste à 0,99 taille de main après recalage | V2 | `hand_refit` V2 | **A** |
+| D3 | RTMW confond la queue et la jupe avec les jambes du personnage animé | V4 | `scratch/v4_overlay.jpg`, images 650 et 900 | B |
+
+**Correctif proposé** : avant le recalage et les mesures, ignorer tout point 2D situé à moins d'une marge du bord
+de l'image ou hors du masque SAM3 de la personne (dilaté). Même filtre dans `hand_reference.py`, `hand_refit.py`
+et les diagnostics. Sans ce filtre, les mesures de V2 surestiment l'erreur de l'avatar.
+
+### 2.2 Ce que SAM 3D Body produit image par image (les données)
+
+| # | Défaut | Où | Preuve | Prio |
+|---|---|---|---|---|
+| D4 | **Taille fausse en gros plan et en insert** (jusqu'à ×2,35), à cause de la focale fixe supposée sur des cadrages serrés | TS (environ 8 % des images) | `size_diag2` TS | **A** |
+| D5 | Le personnage « respire » en taille en caméra mobile : 7 à 9 % dans le plan, 7 à 8 % d'une image à l'autre (V1 : 1,5 % et 0,5 %) | V2 | `size_diag2v` | B |
+| D6 | **Mouvement rapide** : brut très instable (bruit médian 71 mm, 1367 pics/min, 27 demi-tours en une image) ; le lissage laisse encore 293 pics/min | V4 | `motion_diag` V4 | **A** |
+| D7 | Profondeur brute instable même en caméra fixe (119 pics/min), corrigée par le lissage | V1, TS | `motion_diag` | C (corrigé) |
+| D8 | Jambes inventées quand elles sont hors cadre (100 % cachées dans V2) | V2 | `hidden share` | C (attendu) |
+
+**Correctifs proposés** :
+- **D4, D5** : transmettre au modèle une focale cohérente avec le cadrage. La focale propre au recadrage change
+  avec le recadrage, et l'orientation globale ne se déduit pas correctement d'un recadrage seul (CLIFF, PersPose).
+  On peut aussi estimer la focale par plan (W-HMR, Zolly), ou recaler l'échelle et la profondeur sur la hauteur du
+  masque SAM3, puisque celle-ci est stable (IoU de 0,83 à 0,88 hors V4).
+- **D6** : voir D9.
+
+### 2.3 Lissage et recalage (notre traitement)
+
+| # | Défaut | Où | Preuve | Prio |
+|---|---|---|---|---|
+| D9 | **Le lissage est en retard sur les gestes rapides** : sur les images rapides de V4, l'erreur 2D passe de 0,86 à 0,94 torse. Le lissage stabilise mais s'éloigne de l'image (déjà vu au §8 de la note 15 pour les mains) | V4, un peu V1 | `body_fidelity.py` | **A** pour la danse |
+| D10 | Le recalage des mains réduit l'erreur mais ne corrige pas le reste du corps : rien ne recale le corps sur la 2D | V4, V2 | Corps brut ≈ final partout | B |
+
+**Correctif proposé** : étendre le recalage 2D au corps entier, avec le même principe que le recalage des mains
+(Geman-McClure, terme temporel). Il servirait de dernière étape après le lissage, avec un poids temporel adapté à
+la vitesse, pour que le mouvement suive l'image sans revenir aux pics. Il ne doit être fait qu'**après D1**, sinon
+il recalera aussi sur les faux points.
+
+### 2.4 Forme du corps
+
+| # | Défaut | Où | Preuve | Prio |
+|---|---|---|---|---|
+| D11 | Silhouette non humaine non représentable (queue, jupe, cheveux volumineux) : largeur 0,55 et IoU 0,54 | V4 | `silhouette_diagv` | C (limite du modèle humain) |
+| D12 | Avatar plus étroit que la personne habillée (manteaux) : largeur 0,88–0,90 | V2 ; femme TS −13 % | `silhouette_diagv` | C |
+
+Ce n'est pas un défaut de pose. Il est à documenter comme limite : MHR décrit un corps humain sans vêtements.
+
+### 2.5 Visage
+
+| # | Défaut | Où | Preuve | Prio |
+|---|---|---|---|---|
+| D13 | Visage lu sur 28 % des images seulement pour un visage animé (yeux et proportions hors de ce qu'apprend MediaPipe) | V4 | `face_blendshapes` | C (attendu) |
+| D14 | Visage lu sur 65 % des images pour une personne souvent de profil ou de dos ; quand la tête de SAM 3D Body sert à placer la recherche, 2,7 % seulement sont lus | V2 p1 | `face_blendshapes` | B |
+| D15 | Pas de clignements | TS | Visuel | C |
+
+### 2.6 Fond (décor)
+
+| # | Défaut | Où | Preuve | Prio |
+|---|---|---|---|---|
+| D16 | **Caméra mobile : fond gris sur toute la vidéo**. `decor_cameras` voit 21 coupes dans un plan unique (le panoramique ressemble à des coupes), il garde 2 morceaux qui commencent à 3,0 s et 36,6 s, et le rendu ne retrouve donc aucun début de plan | V2 | `decor_cameras.json`, `final_plate_own.log` | **A** pour V2 |
+| D17 | Une plaque fixe ne peut de toute façon pas représenter un panoramique : il faut une plaque par image (mosaïque recalée par homographie, ou inpainting vidéo de type ProPainter) | V2 | Principe | A (même cause) |
+| D18 | Halo et taches autour de l'avatar : le décor caché par la personne n'est jamais vu (12,9 % de V1) et l'inpainting OpenCV l'étale | V1, TS | Visuel | B |
+| D19 | Plans sans plaque fiable en gris (49/118) | TS | §8 de la note 15 | Secondaire (accepté) |
+| D20 | Les seuils de plaque doivent être réglés à la main pour un plan unique (`--min_plate_inliers 0`) | V1, V4 | Log V1 | C |
+
+### 2.7 Rendu et outils
+
+| # | Défaut | Où | Preuve | Prio |
+|---|---|---|---|---|
+| D21 | Dessin du maillage par lots : 0,85 % des pixels diffèrent d'un dessin triangle par triangle, uniquement sur des bords ; aucun trou | V1 | `holes_test.py` | C (vérifié, pas une cause) |
+| D22 | `smooth_params.py` projette en 2D avec un centre fixe de 1920×1080 : faux pour V4, mais cela ne sert qu'au score d'annotations, non utilisé ici | Code | ligne 249 | C |
+
+## 3. Ce qui a été vérifié et n'est pas une cause
+
+- **Taille du personnage dans TS** : elle ne vient ni du rendu (silhouette d'aire 1,00), ni des plaques (qui
+  correspondent à 2 % près). Elle vient du montage, des zooms et de D4.
+- **Trous du maillage** : D21, négligeable.
+- **Inversions avant/arrière** : le lissage les supprime toutes (V4 : 27 → 0).
+- **Son** : corrigé dans `psifx/io/video.py` (branche `fix/visualization-audio`).
+
+## 4. Ordre de correction proposé
+
+1. **D1** : filtrer les points 2D hors cadre ou hors masque. C'est peu coûteux, cela rend les mesures justes et
+   c'est la condition de D2 et de D10.
+2. **D16** : détection de coupes robuste au mouvement de caméra ; rendu qui accepte un plan sans plaque. Ensuite
+   **D17** : plaque par image en caméra mobile (mosaïque par homographie).
+3. **D9 et D10** : recalage 2D du corps entier, avec un poids temporel adapté à la vitesse (la danse).
+4. **D4 et D5** : focale par plan, ou échelle recalée sur le masque.
+5. Le reste (C) est documenté comme limite dans le rapport.
+
+## Sources
+
+- PersPose, recadrage et intrinsèques de la caméra : https://arxiv.org/html/2508.17239v1
+- W-HMR, focale estimée sans étiquettes ; revue de SPEC, CLIFF et Zolly : https://arxiv.org/pdf/2311.17460
+- Zolly, focale et distorsion de perspective : https://arxiv.org/pdf/2303.13796
+- ProPainter, inpainting vidéo : https://arxiv.org/abs/2309.03897
+- VIP, suppression de personnes en vidéo réelle : https://arxiv.org/html/2504.03041v1
+
+## 5. Correctifs appliqués (2026-11-20, une branche par correctif, empilées)
+
+Les quatre correctifs sont empilés, chacun sur sa branche, dans le worktree `.worktrees/moving-plate`.
+La chaîne qui les enchaîne est `scratch/avatar_chain2.sh`.
+
+### 5.1 Points 2D hors cadre (`fix/offframe-keypoints`)
+
+`keypoint_view.py` ne garde un point 2D que s'il est à la fois :
+- dans l'image : hors des bandes noires, trouvées une fois par vidéo, et à plus de 1,5 % de la hauteur du bord ;
+- sur le masque SAM3 de sa personne, dilaté de 12 px.
+
+Ce filtre est utilisé par `hand_refit.py`, par la visibilité du lissage robuste et par les mesures.
+
+| AVA | Avant | Après |
+|---|---|---|
+| Points de main RTMW gardés | 100 % | 49 % (51 % hors cadre) |
+| Erreur des mains mesurée (taille de main), p0 / p1 | 0,50 / 0,99 | 0,10 / 0,40 |
+| Erreur du corps mesurée (taille de torse), p0 / p1 | 0,20 / 0,27 | 0,05 / 0,12 |
+| Mains cachées : déplacement entre l'ancien et le nouveau recalage | — | 78 / 88 px (médiane) |
+| Mains vues : même déplacement | — | 0,3 / 4 px |
+
+L'essentiel de l'erreur était **dans la mesure**, pas dans l'avatar : sur les points vus, l'ancien recalage fait
+aussi bien que le nouveau. Le correctif sert surtout aux mains cachées. Le recalage les tirait vers le bord de
+l'image ; elles restent maintenant là où le lissage les place.
+
+### 5.2 Fond en caméra mobile (`fix/moving-camera-plate`)
+
+- **Coupes trouvées à la pleine fréquence d'images**, comme le fait le rendu. Une coupe change l'image d'une image à
+  l'autre ; un panoramique la change peu à chaque image. Avec 0,2 s entre deux images comparées, chaque panoramique
+  passait pour une série de coupes.
+  - AVA : 21 fausses coupes → 0.
+  - Talk-show : 106 coupes, contre 115 avec l'ancienne règle.
+- **Mosaïque par plan mobile.** Les images du plan sont enchaînées par des homographies calculées sur le décor, dans
+  le repère de l'image du milieu (moins de dérive qu'à partir de la première). On en retire :
+  - les personnes ;
+  - les incrustations, c'est-à-dire ce qui reste fixe à l'écran alors que le décor, réaligné, change (logo) ;
+  - les bandes noires.
+  Le rendu découpe ensuite le fond de chaque image dans cette mosaïque.
+- **AVA** : un seul plan (déplacement de 861 px), et le fond retrouvé sur toute la vidéo.
+  - Écart médian au vrai décor : 3 niveaux de gris.
+  - 93 % des pixels du décor sont à moins de 20 niveaux.
+  - Défaut restant : les 2 premières secondes (panoramique rapide et flou), avec un écart de 43 niveaux.
+- **Talk-show** : 7 petits plans mobiles (zooms, recadrages) reçoivent eux aussi une mosaïque.
+
+### 5.3 Recalage du corps entier (`fix/body-refit`)
+
+`body_refit.py` cale les 17 points COCO de l'avatar sur RTMW. Ces points sont ceux de MHR70, ceux que comparent les
+annotations. Pour éviter de calculer le maillage, chaque point est attaché à une articulation par son décalage dans
+le repère de celle-ci (0,3 cm d'erreur après un déplacement de 55 cm du coude). Le terme temporel est allégé là où
+la 2D bouge vite.
+
+Pour la mesure, une image sur 5 est retirée du recalage et l'erreur est mesurée sur ces images.
+
+| | Lissé | **Recalé** | Brut |
+|---|---|---|---|
+| Talk-show, OKS / PCK@0,05 / PCK des poignets (annotations) | 0,816 / 0,768 / 0,922 | **0,841 / 0,790 / 0,931** | 0,830 / 0,769 / 0,920 |
+| Talk-show, erreur sur les images retirées (torse), p0 / p1 | 0,063 / 0,055 | **0,030 / 0,032** | |
+| V1, erreur sur les images retirées | 0,035 | **0,019** (tremblement égal au lissé) | |
+| AVA, erreur sur les images retirées, p0 / p1 | 0,052 / 0,115 | **0,030 / 0,074** | |
+| Danse animée, erreur sur les images retirées, toutes / rapides | 0,33 / 1,30 | **0,24 / 1,13** | |
+
+Deux essais ont échoué, et leurs leçons sont gardées :
+- **Articulations nues, tête libre, sans point du visage** : l'avatar se rapproche de RTMW mais la tête dérive.
+  L'OKS tombe de 0,816 à 0,747. Être proche du détecteur ne veut pas dire être juste.
+- **Poids temporel ajusté selon (fps/25)⁴** : à 60 images/s, le problème devient trop raide pour converger (OKS
+  0,70). Le bruit du détecteur est propre à chaque image, donc le poids reste défini par image (10⁵).
+
+Coût : le tremblement du talk-show passe de 0,004 à 0,011 torse par image², soit encore 14 fois moins que le brut.
+
+### 5.4 Taille en gros plan (`fix/closeup-size`)
+
+Le défaut annoncé (« taille fausse jusqu'à ×2,35 ») était **surtout un artefact de mesure**. En gros plan, RTMW
+invente des épaules et des poignets hors du cadre ou collés au bord.
+- Mesurée seulement sur les points vus, la dispersion entre plans de la personne 0 passe de 9 % à 4 %.
+- Mesurée sur le seul visage (nez, yeux, oreilles), la taille de l'avatar correspond à l'image dans **tous** les
+  plans, à 0,87–1,07 près. La tête est un peu trop petite (jusqu'à −13 %) dans les cadrages les plus serrés.
+
+Recaler en plus la profondeur et la position (option `--depth`) ne change pas l'OKS (0,843) et triple le
+tremblement : l'option est laissée désactivée. Les changements de taille visibles dans le talk-show viennent donc
+du montage, pas de l'avatar.
+
+## 6. Danse humaine montée (V5, `v4_rat-danse_1.mp4`, 24 s, 30 im/s, 720x1280, 24 plans)
+
+La chaîne corrigée (`avatar_chain2.sh`) a tourné sur cette vidéo. La seconde vidéo fournie, `v4_danse_2.mp4`, ne
+montre pas de danseur mais un robot à roues : elle est en attente d'une autre vidéo.
+
+**Ce qui marche**
+- Les poses de la danseuse et du danseur sont suivies, y compris les plans serrés sur les jambes.
+- L'autocollant du rat dansant n'est pas pris pour une personne.
+- Le recalage du corps divise l'erreur 2D par 2,2 pour p0 (0,098 → 0,044 torse ; images rapides 0,23 → 0,10).
+- Le recalage des mains la divise aussi par 2,2 (0,22 → 0,10 taille de main).
+
+**Nouveaux défauts**
+
+| # | Défaut | Preuve | Prio |
+|---|---|---|---|
+| D23 | **Avatar fantôme** : à partir de l'image 365, SAM3 rattache à la piste de la danseuse le petit personnage de l'incrustation « TUTO YOUTUBE ». SAM 3D Body en fait un corps grandeur nature, posé sur le danseur | Masque 1, image 480 ; personne 1 sur les images rapides : 3,3 tailles de torse | **A** |
+| D24 | Les masques SAM3 gardent une bande parasite au bord de l'image, déjà vue sur le talk-show (les diagnostics prennent la plus grande composante, pas la chaîne) | Même masque | B |
+| D25 | Montage rapide : 24 plans en 24 s, dont 17 font moins d'1 s. Le fond ne se calcule qu'à partir d'1 s, donc 14 plans sur 24 restent gris | Log du rendu | B |
+| D26 | Pics de profondeur non retirés par le lissage (232/min) : ils viennent surtout de D23 | Lissage robuste | conséquence |
+| D27 | L'ancien environnement `psifx-env` fait planter MediaPipe (le processus est tué) sur cette vidéo ; `psifx-dev` passe | `logs/pose_mediapipe.log` | C |
+
+**Correctifs proposés**
+- **D23** : écarter les morceaux de piste situés dans une incrustation, c'est-à-dire un rectangle fixe à l'écran
+  dont le contenu ne suit pas le décor (même test que pour les logos de la mosaïque), ou dans les zones `--ignore`
+  données à la main. Ou bien couper une piste quand la taille de son masque change brutalement d'un facteur supérieur
+  à 3.
+- **D24** : ne garder, dans la chaîne elle-même, que la plus grande composante connexe du masque.
+- **D25** : pour un plan court, prendre le fond d'un autre plan de la même caméra, trouvé par les points du décor,
+  au lieu de le laisser gris.
+
+## 7. Priorité : fidélité des mouvements (2026-11-20/21, retour de l'auteur sur V5)
+
+Retour de l'auteur : sur V5, les jambes sont « raccourcies, molles », le pied qui passe derrière l'autre manque de
+profondeur, et les tapes de pied (vers 10 s) ne sont pas rendues. Pour l'usage en psychologie, une information
+manquante est grave : c'est désormais la priorité. Le personnage de l'encart doit disparaître.
+
+### 7.1 Personnage de l'encart (`fix/inset-person`)
+
+- Seule la plus grande composante du masque est gardée, pour la boîte comme pour l'invite donnée à SAM 3D Body. La
+  bande parasite au bord de l'image produisait une boîte allant du bord jusqu'à la petite silhouette, d'où le corps
+  grandeur nature.
+- `people_from_tracks.py` coupe une piste quand son masque saute (centre déplacé de plus de 15 % de la diagonale,
+  ou aire multipliée par 3). Il **écarte les images fixes** : un morceau dont les pixels ne changent pas, avec une
+  médiane inférieure à 1 niveau de gris par image pendant plus d'1 s, est une image (encart figé, affiche) et non
+  une personne.
+  - Sur V5, l'encart a un changement de **0,0** ; les danseurs vont de 5,7 à 31.
+  - L'avatar fantôme a disparu.
+
+### 7.2 Jambes (`fix/leg-fidelity`)
+
+Trois causes, mesurées sur V6 (fichier `v4_danse_2.mp4` remplacé : danse rapide en plan fixe) et sur V5.
+
+1. **Référence 2D fausse pour les jambes.** RTMW tournait sur une boîte du haut du corps (de la tête aux hanches,
+   ×1,1) : genoux, chevilles et pieds étaient hors du recadrage, donc inventés. Le danseur de V5 avait ainsi 0,7
+   torse d'écart aux chevilles. RTMW tourne maintenant une seconde fois sur la boîte du corps entier quand les
+   jambes sont dans l'image, pour les 23 points du corps et des pieds.
+2. **Lissage trop fort sur les jambes.** La coupure à 2 Hz avait été choisie pour le talk-show, où les jambes sont
+   cachées et inventées. Amplitude du mouvement des pieds par rapport aux hanches, avatar / RTMW, en moyenne sur
+   3 images (V6) :
+
+   | Lissage des jambes | 2 Hz | 4 Hz | **6 Hz** | 10 Hz | Brut |
+   |---|---|---|---|---|---|
+   | Amplitude | 0,71 | 0,82 | **0,87** | 0,88 | 0,88 |
+
+   Les jambes cachées restent tenues par leur mesure affaiblie.
+3. **Le recalage ignorait les pieds et freinait les jambes.** `body_refit.py` cale maintenant aussi les talons et
+   les orteils (23 points). Chaque point est attaché à son articulation la plus proche (`talocrural`, `ball`,
+   `subtalar`…). Le poids temporel des jambes est réduit (5·10³ contre 10⁵ ailleurs).
+
+| | Avant (2 Hz, haut du corps) | **Après** | Brut SAM 3D Body |
+|---|---|---|---|
+| V6, amplitude des pieds | 0,69 | **0,93** | 0,88 |
+| V6, erreur des pieds (torse) | 0,046 | **0,022** | 0,038 |
+| V6, dispersion avant-arrière des pieds (cm) | 6,8 | **10,8** | 7,4 |
+| V5 danseur, plan long (tapes de pied), amplitude | 0,76 | **0,98** | 1,01 |
+| V5 danseur, erreur des pieds (torse) | 0,058 | **0,019** | 0,028 |
+| V1, tremblement (doit rester celui du lissage, 0,0085) | | **0,0095** | |
+| Talk-show, OKS / PCK des poignets (annotations) | 0,816 / 0,922 | **0,835 / 0,924** | 0,830 / 0,920 |
+
+Aux images où les pieds se croisent (V5, images 481 et 561), l'avatar croise aussi les jambes. La profondeur
+(quel pied est devant) n'a pas de vérité terrain : la dispersion avant-arrière des pieds augmente (7,4 → 10,8 cm),
+mais cela ne prouve pas qu'elle est juste. FootMR (2026) montre que même les modèles vidéo récents (GVHMR) ratent
+les mouvements de pied complexes, et corrige justement avec les points 2D des pieds.
+
+**Défaut trouvé en chemin** : dans `body_refit.py`, la taille du torse était mesurée sur les mauvais points (tête
+au lieu d'épaules, coudes au lieu de hanches) depuis le passage à 17 points. C'est corrigé. L'OKS du talk-show
+n'en dépend pas ; les erreurs exprimées « en torse » d'avant ce correctif ne sont pas comparables.
+
+### 7.3 Ce qui reste
+
+- **V5, montage en filé** (images 271 à 299) : 22 plans d'une image chacun. Les couleurs des danseurs changent et
+  la personne 1 a de grandes erreurs (images rapides : 5,7 torses). Ce sont des transitions floues, à exclure ou à
+  traiter comme une seule séquence.
+- V5 : il reste 37 pics de profondeur par minute (192 en brut).
+- V6 : les légendes (« tap with one leg ») changent pendant le plan ; le fond médian en garde une trace floue.
+- Profondeur des pieds : à mesurer sur une vérité terrain 3D (MOYO, ou MOOF de FootMR).
+
+Sources :
+- FootMR, mouvements de pied en 3D à partir des points 2D des pieds (2026) : https://arxiv.org/html/2603.09681
+- WHAM, contact des pieds et glissement : https://arxiv.org/pdf/2312.07531
+- GVHMR, coordonnées gravité-vue et étiquettes de pieds immobiles : https://arxiv.org/html/2409.06662v1
+- DanceHMR : https://arxiv.org/pdf/2605.18102
+
+## 8. Mouvements rapides et secs (2026-11-21, retour de l'auteur sur V5 entre 9 et 11 s)
+
+Demande : à 10-11 s le danseur tape du pied en croisant les bras ; les coups de pied n'apparaissaient pas et les
+bras étaient moins « saillants » que l'original. La précision prime sur la vitesse de calcul. Branche
+`fix/fast-motion` (sur `fix/leg-fidelity`, worktree `.worktrees/moving-plate`).
+
+SAM 3D Body tourne déjà sur **chaque image** : le « 1 image sur N » n'était pas en cause. Diagnostic étape par
+étape (`stage_diag.py`, cheville droite, images 312-336) : RTMW voit deux levers de pied de 100-130 px, SAM 3D Body
+brut en rend 50-70 px, le lissage robuste les efface (courbe plate), le recalage ne les rattrape pas.
+
+### 8.1 Causes et corrections
+
+| # | Cause | Correction |
+|---|---|---|
+| 1 | Le masque SAM3 du danseur ne couvre que le sweat sur 15 % de ses images (ni tête ni jambes) : le filtre de visibilité déclarait les jambes cachées, le lissage les figeait (bruit x100), le recalage les ignorait | Masque **partiel** = contient moins de 70 % des points du corps que RTMW voit avec assurance ; ces images sont jugées sur le cadre seul (`keypoint_view.in_view(cover=)`, `robust_smooth.visibility(references=)`) ; la référence 2D passe avant le lissage |
+| 2 | Perte Geman-McClure à échelle fixe 0,1 torse : un point à 0,4 torse ne tire qu'à 4 % — un vrai mouvement sec arrondi par le lissage était traité comme aberrant | **Non-convexité graduelle** : échelle de 1 torse divisée par 1,4 jusqu'à 0,1 (Yang et al. 2020), forme σ²r²/(σ²+r²) de SMPLify |
+| 3 | Le terme temporel se relâchait selon la vitesse **médiane du corps** : quand seul un pied ou un bras bouge, il restait raide | Relâchement **par membre** selon la vitesse de ses propres points ; bras libérés (`--arms_temporal 5e3` au lieu de 1e5) |
+| 4 | Détection de coupe à seuil fixe : panoramique rapide et flash = 15 plans d'une image (V5, 271-299), sans lissage ni continuité | Règle **adaptative** de PySceneDetect : la différence doit aussi valoir 3x la moyenne de ses 2+2 voisines. V5 : 23 coupes → 8 ; talk-show : 3 fausses coupes en moins (générique, zoom) ; autres vidéos inchangées |
+
+Trois effets de bord trouvés en validant sur les autres vidéos, et corrigés :
+
+| # | Effet | Correction |
+|---|---|---|
+| 5 | Talk-show converti de ~25 à 60 im/s : 62 % des images répètent la précédente, la cible avance en escalier et l'avatar la suivait (accélération x5) | Image répétée (différence < 0,15 niveau de gris) = pas de cible 2D, vitesse mesurée entre images nouvelles |
+| 6 | Seuil de score RTMW à 0,5 : les jambes cachées sous la table (score 1-2, contre 2,5-7 pour un point vu) tombaient sur le masque et étaient suivies une fois la perte recuite (genoux, chevilles : 1-2 torses/image²) | Poids en rampe du score 1,5 (nul) à 3 (plein) |
+| 7 | Adam à pas constant oscille autour de l'optimum, différemment à chaque image : le visage de l'avatar tremblait plus que les points RTMW eux-mêmes (V1 : 0,010 contre 0,007 ; 0,034 à 600 itérations) | Décroissance en cosinus du pas jusqu'à 1 %, 600 itérations |
+
+### 8.2 Résultats
+
+V5, danseur, images 299-345 (coup de pied et bras croisés), avatar final contre RTMW :
+
+| Point | Erreur (torse) avant → après | Amplitude | Vitesse de pointe |
+|---|---|---|---|
+| Cheville droite (pied qui tape) | 0,12 → 0,02 | 0,53 → 0,96 | 0,37 → 0,88 |
+| Poignet gauche | 0,13 → 0,04 | 0,88 → 1,05 | 0,47 → 0,74 |
+| Poignet droit | 0,14 → 0,03 | 0,89 → 1,04 | 0,59 → 0,95 |
+| Coude droit | 0,06 → 0,03 | 0,91 → 0,97 | 0,36 → 0,64 |
+
+Le pied de l'avatar monte à 190 px au-dessus des hanches pour 191 px sur l'image (avant : 290, pied au sol).
+
+Toutes les vidéos (recalage du corps, erreur médiane en torse et accélération 2D au 95e centile) :
+
+| Vidéo | Erreur avant → après | Accélération avant → après |
+|---|---|---|
+| Talk-show, 2 personnes | 0,035 / 0,039 → 0,020 / 0,022 | 0,0096 / 0,0176 → 0,0064 / 0,0086 |
+| V1 | 0,016 → 0,013 | 0,0095 → 0,0118 (visage au même niveau ; bras plus libres) |
+| AVA, 2 personnes | 0,032 / 0,077 → 0,017 / 0,028 | 0,017 / 0,026 → 0,012 / 0,024 |
+| V6 | 0,021 → 0,017 | 0,078 → 0,086 (danse : plus de mouvement gardé) |
+
+OKS du talk-show (200 images annotées à la main) : 0,835 → **0,845** après le recalage du corps (PCK@0,05 0,784 →
+0,796, poignets 0,924 → 0,931). Le recalage des mains qui suit le ramène à 0,835 : à examiner.
+
+### 8.3 Ce qui reste
+
+- **Identité entre plans (V5, 281-291)** : la piste SAM3 n° 1, la danseuse avant, porte l'homme qui entre ; il
+  change de couleur au flash (292). Ni les couleurs dans le masque (l'éclairage change d'un plan à l'autre) ni la
+  forme du corps de SAM 3D Body (faussée en gros plan) ne séparent les deux danseurs. Il faut un vrai modèle de
+  ré-identification de personnes.
+- **Personne à moitié sortie du cadre** (V5, 300-308, la danseuse poussée) : avatar couché.
+- Recalage des mains : -0,01 d'OKS sur le talk-show.
+- V5 : 14 plans courts restent sans fond.
+
+Sources :
+- Yang, Antonante, Tzoumas, Carlone, *Graduated Non-Convexity for Robust Spatial Perception* (RA-L 2020) :
+  https://arxiv.org/pdf/1909.08605
+- SMPLify, terme 2D Geman-McClure : https://arxiv.org/html/1607.08128
+- PySceneDetect, AdaptiveDetector : https://www.scenedetect.com/docs/api.html
+
+## 9. Ré-identification entre plans et personne au bord du cadre (2026-11-21, retour de l'auteur sur V5 entre 9 et 10 s)
+
+Retour de l'auteur :
+- juste avant la coupe vers la danseuse, l'homme sort du cadre et son avatar prend une pose étrange ;
+- au plan de la poussée, la danseuse (verte) apparaît jaune et l'homme (rouge) vert ;
+- pendant la poussée, des erreurs restent sur la jambe de l'homme qui saute, et la danseuse tombe au lieu de sortir du cadre ;
+- au flash, la danseuse reste jaune et son avatar tombe au sol.
+
+La ré-identification est le défaut principal. Branche `fix/reid-shots` (sur `fix/fast-motion`, worktree
+`.worktrees/moving-plate`), commit `1148a47`.
+
+### 9.1 Causes et corrections
+
+| # | Cause | Correction |
+|---|---|---|
+| 1 | `people.json` rattachait les pièces de pistes SAM3 aux personnes par les couleurs du masque et la forme du corps. Or l'éclairage change d'un plan à l'autre, et la forme est faussée en gros plan. | `reid_people.py` : chaque pièce est décrite par des vecteurs DINOv2-small, tirés de 12 images, sur deux recadrages : le corps (masque SAM3, fond gris) et la tête (points 0–4 de SAM 3D Body, 2,2 × leur étendue). La similarité entre deux pièces est la moyenne symétrique des meilleures correspondances cosinus. Le regroupement se fait à liaison moyenne, en interdisant de fusionner deux groupes présents sur une même image ; seuil 0,55, ou `--people N`. Une pièce de moins de 5 images prend la personne de sa voisine de même piste, sinon le groupe le plus proche, sinon « other ». La méthode hongroise garde les numéros, donc les couleurs. |
+| 2 | Pour la référence 2D, RTMW lisait le recadrage d'une personne qui contient aussi l'autre : pendant la poussée, la jambe du voisin pouvait être prise. | Les pixels des masques des autres personnes, hors du masque propre dilaté de 6 px, passent en gris avant RTMW (`hand_reference --people`). Dans les filtres de visibilité (`keypoint_view`, `robust_smooth`), un point posé sur le masque d'une autre personne est rejeté et ne compte pas dans la couverture qui sert à juger un masque partiel. |
+| 3 | Personne qui sort du cadre : sans points vus, seul l'a priori tient l'avatar, qui se couche ou lève le bras. Rien n'interdit au corps de dépasser du masque. | Terme de silhouette dans `body_refit`, appliqué seulement aux images où le masque touche le bord (8 px) et n'est pas partiel. Les 23 points et les milieux des segments de membres doivent tomber sur un masque SAM3 (dilaté) ou hors du cadre. Coût : (distance / torse)² × 100, lu sur une carte de distance à 1/4. Sur ces images, le décalage de l'avatar dans l'image devient libre. Ailleurs, pas de terme, car une jambe sous une table n'est pas absente. |
+
+Les autres méthodes ont échoué. Entre les deux danseurs de V5, les couleurs et la forme du corps ne séparaient
+rien. SigLIP2 était plus ambigu que DINOv2. La tête apporte l'invariance au changement de vêtements et
+d'éclairage (2403.02892). Les modèles de ré-identification entraînés (CLIP-ReID, SOLIDER) sont faits pour des
+caméras de surveillance, pas pour des plans de montage (2601.20598).
+
+### 9.2 Résultats
+
+**V5**
+- 6 pièces changent de personne : l'homme reste rouge et la danseuse verte, avant et après le flash.
+- Plus de bras levé quand l'homme sort (images 276–280), plus d'avatar couché pour la danseuse (300–308). Il
+  reste une petite main verte au bord, aux images 304–305, faute de référence RTMW.
+- Poussée (images 284–290), erreur de la cheville de l'homme après recalage : jusqu'à 198 px avant, 3 à 44 px
+  après. Le genou droit des images 287–288 est trop loin du bord pour le terme de silhouette. L'image du flash
+  (291) reste à 110–150 px.
+
+**Toutes les vidéos** (recalage du corps : erreur médiane en torse et accélération 2D au 95e centile)
+
+| Vidéo | Erreur avant → après | Accélération avant → après |
+|---|---|---|
+| V5, homme / danseuse | 0,0174 / 0,0246 → 0,0147 / 0,024 | — |
+| V6 | 0,0167 → 0,0167 (jamais au bord) | inchangée |
+| AVA | 0,0172 / 0,0275 → 0,0165 / 0,024 | 0,012 / 0,024 → 0,011 / 0,022 |
+| V1 | 0,0127 → 0,0116 (24 697 points utiles contre 22 194) | 0,0118 → 0,0132 |
+| Talk-show, animateur / invité | 0,0200 / 0,0216 → 0,0193 / 0,0221 | 0,0064 / 0,0086 → 0,0067 / 0,0090 |
+
+OKS du talk-show (200 images annotées) :
+- après le recalage du corps : 0,845 → **0,847** (PCK@0,05 0,796 → 0,806) ;
+- après le recalage des mains : 0,835 → 0,838.
+
+Le talk-show change aussi de structure. Les images 5916–6248 et 6444–6668 montrent l'explicateur des battles
+d'aura, filmé hors du studio, devant un mur blanc. L'ancienne méthode les donnait à l'animateur ; elles forment
+maintenant une personne 2, en jaune. L'image 646, une affiche, passe en « other ».
+
+### 9.3 Ce qui reste
+
+- L'image du flash de V5 (291) : 110–150 px d'erreur.
+- Le genou de l'homme pendant le saut, loin du bord : seul RTMW le guide.
+- Le recalage des mains coûte encore 0,01 d'OKS.
+
+### 9.4 L'explicateur du talk-show : son fond et sa voix (retour de l'auteur)
+
+La scène, c'est la vidéo elle-même : toute personne filmée a son avatar et son propre fond, même dans un passage
+inséré. Seuls l'encart de V5 et les affiches restent exclus.
+
+| # | Défaut | Cause | Correction |
+|---|---|---|---|
+| 1 | L'explicateur apparaît devant le décor du studio au lieu de son mur blanc | `decor_cameras.py` rangeait ses plans avec ceux du plan large, parce que les logos (« SMALL TALK », Konbini), toujours au même endroit, suffisaient à faire correspondre les plans. L'ancien groupe 0 réunissait 53 plans avec une médiane de 126 points communs. | On exclut de la correspondance les pixels immobiles dans au moins 80 % des plans (2 % de l'image). Si cette zone dépasse 20 % de l'image, la vidéo n'a qu'une caméra et l'exclusion est abandonnée. Chaque groupe de caméra a désormais son fond, plus seulement les 8 plus grands. Les pixels vus dans moins de 10 % des échantillons sont enregistrés à part (`unseen_<g>.png`), pour que le rendu ne bouche que ceux-là et garde le noir réel, comme les bandes d'une vidéo verticale. |
+| 2 | Sous-titres de l'explicateur marqués « off 1 » | Le lien voix–visage (Light-ASD) donnait sa voix à l'ancienne personne 0, qu'il partageait avec l'animateur. Sa voix ne ressemblait pas à celle de l'animateur, donc elle avait été rejetée vers « hors champ ». | La chaîne des locuteurs (`speakers.py`) est relancée avec la nouvelle `people.json`, et sa voix va à la personne 2. |
+
+Résultats :
+- Talk-show : 22 groupes de caméras au lieu de 12, avec jusqu'à 1 026 points communs. Les vrais plans du studio se séparent par caméra.
+- Talk-show : 68 plans sur 115 ont un fond, contre 64.
+- Explicateur : il est rendu sur son mur blanc, avec ses sous-titres « P2 » en jaune.
+- Sous-titres : 92,1 % des mots vont à la bonne personne, comme avant. L'explicateur est maintenant nommé P2 au lieu de « off 1 ».
+- V5, V6, AVA et V1 gardent le même nombre de plans avec un fond.
+
+Ce qui reste :
+- Deux lignes sont encore attribuées à P2 : « C'est combien de points d'aura ça ? » (une personne derrière la caméra) et « Je crois que je serais fort » (l'animateur). La diarisation les met dans le même groupe de voix que l'explicateur.
+- Sur le fond du plan large, aux places des invités, le décor n'est visible que pendant la transition du logo. Ces pixels gardent ses couleurs. Ils sont presque toujours cachés par les avatars.
+
+Sources :
+- Oquab et al., *DINOv2: Learning Robust Visual Features without Supervision* (2023) : https://arxiv.org/abs/2304.07193
+- Ré-identification à long terme avec un flux tête : https://arxiv.org/abs/2403.02892
+- *Person Re-ID in 2025: Supervised, Self-Supervised, and Language-Aligned. What Works?* (2026) : https://arxiv.org/pdf/2601.20598
+- SapiensID, reconnaissance unifiée visage et corps (CVPR 2025) : https://openaccess.thecvf.com/CVPR2025
+- CLIP-FGDI, ré-identification généralisable avec CLIP (2025) : https://arxiv.org/abs/2501.16065
+- MUVA, alignement vision-langage multi-granularité pour la ré-identification (2026) : https://arxiv.org/abs/2603.14012
